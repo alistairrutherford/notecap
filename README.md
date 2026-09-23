@@ -106,12 +106,49 @@ auval -v aufx NtCp ARut
 If Live doesn't list it after a rescan, run `killall -9 AudioComponentRegistrar`
 and restart Live.
 
+## Installer
+
+```sh
+Tools/package.sh              # Release build -> dist/NoteCap-<version>.pkg
+Tools/package.sh --no-build   # package the existing Release build
+```
+
+The installer offers AU and VST3 choices and installs to
+`/Library/Audio/Plug-Ins/…`. It also refreshes the AU cache. CI builds the same
+package on every push (the *NoteCap-installer* artifact).
+
+Without extra setup the plugins are **ad-hoc signed**. That works on the Mac
+that built them, but Gatekeeper blocks the package on other Macs. To
+distribute it, get **Developer ID Application** and **Developer ID Installer**
+certificates (Apple Developer Program), then:
+
+```sh
+xcrun notarytool store-credentials notecap --apple-id you@example.com --team-id TEAMID
+DEVELOPER_ID_APP="Developer ID Application: Your Name (TEAMID)" \
+DEVELOPER_ID_INSTALLER="Developer ID Installer: Your Name (TEAMID)" \
+NOTARY_PROFILE=notecap Tools/package.sh
+```
+
+This signs with the hardened runtime, notarizes and staples the package.
+
+**Dev builds and the installer don't mix:** Xcode builds copy the plugins into
+`~/Library/Audio/Plug-Ins/`, and the installer puts them in `/Library/…`. With
+both present, Live may load either one. Remove one of the two.
+
 ## Tests
 
 ```sh
 Tests/run_tests.sh          # core DSP: classifier, quantizer, voicing, engine + randomised benchmark
 Tests/run_integration.sh    # real processor + fake transport + CoreMIDI round trip (needs a Release build)
 ```
+
+The integration test also covers these hardening checks:
+- no heap allocation inside `processBlock`;
+- no stuck notes when the virtual port closes while a chord is held, with both
+  a real-time clock and a clock running ahead of it;
+- recovery from NaN/Inf input;
+- four instances processing at once on separate threads, with no crosstalk
+  between their ports.
 
 The engine benchmark renders 300 synthetic strummed-guitar chords at 44.1, 48
 and 96 kHz, with random tuning and strum speeds. Current result: **98.7%

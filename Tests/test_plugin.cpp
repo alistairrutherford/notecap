@@ -6,11 +6,35 @@
 #include "TestUtil.h"
 #include <CoreMIDI/CoreMIDI.h>
 #include <mach/mach_time.h>
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <map>
 #include <mutex>
+#include <new>
 #include <set>
+#include <thread>
 
 using testutil::check;
+
+// ---- heap allocation counter: counts operator new on threads that opt in ----
+namespace alloccount
+{
+    thread_local bool counting = false;
+    std::atomic<int> count { 0 };
+}
+
+void* operator new (std::size_t n)
+{
+    if (alloccount::counting) alloccount::count.fetch_add (1);
+    if (void* p = std::malloc (n ? n : 1)) return p;
+    throw std::bad_alloc();
+}
+void* operator new[] (std::size_t n) { return operator new (n); }
+void operator delete (void* p) noexcept { std::free (p); }
+void operator delete[] (void* p) noexcept { std::free (p); }
+void operator delete (void* p, std::size_t) noexcept { std::free (p); }
+void operator delete[] (void* p, std::size_t) noexcept { std::free (p); }
 
 namespace
 {
@@ -109,7 +133,8 @@ namespace
 
     // Runs the processor over `sidechain` with the transport playing from ppq 0,
     // then a few stopped blocks. Returns every MIDI event it wrote to the host buffer.
-    RunResult run (NoteCapAudioProcessor& proc, const std::vector<float>& sidechain, int stoppedBlocks = 8)
+    RunResult run (NoteCapAudioProcessor& proc, const std::vector<float>& sidechain, int stoppedBlocks = 8,
+                   bool countAllocations = false)
     {
         FakePlayHead ph;
         proc.setPlayHead (&ph);
@@ -119,6 +144,7 @@ namespace
         r.hostStartNs = VirtualMidiOut::nowNs() + 100'000'000;  // a little in the future
         juce::AudioBuffer<float> buf (4, block);   // main L/R + sidechain L/R
         juce::MidiBuffer midi;
+        midi.ensureSize (4096);   // the host owns this buffer; don't count its growth
 
         const int64_t total = (int64_t) sidechain.size() + stoppedBlocks * block;
         for (int64_t pos = 0; pos < total; pos += block)
@@ -136,7 +162,9 @@ namespace
                 buf.setSample (3, i, sidechain[(size_t) (pos + i)]);
             }
             midi.clear();
+            alloccount::counting = countAllocations;
             proc.processBlock (buf, midi);
+            alloccount::counting = false;
             for (const auto meta : midi)
             {
                 const auto m = meta.getMessage();
@@ -380,6 +408,167 @@ static void testStateAndPorts()
     check (! d->getMidiOut().isOpen(), "turning the port parameter off closes the port");
 }
 
+
+static void testNoAllocationInProcessBlock()
+{
+    std::cout << "== real-time safety ==\n";
+    NoteCapAudioProcessor proc;
+    proc.setRateAndBufferSizeDetails (fs, block);
+    setParam (proc, "grid", 3);
+    setParam (proc, "length", 2);   // fixed length: exercises release scheduling too
+    const auto audio = testsynth::renderGuitar ({ { 0.5, testsynth::guitarChord ("C"), "C" },
+                                                  { 1.5, testsynth::guitarChord ("Am"), "Am" },
+                                                  { 2.5, testsynth::guitarChord ("E7"), "E7" },
+                                                  { 3.5, testsynth::guitarChord ("G"), "G" } }, fs, 4.5);
+    run (proc, audio);   // warm-up
+    alloccount::count = 0;
+    const auto r = run (proc, audio, 8, true);
+    check (! r.hostNotes.empty() && alloccount::count.load() == 0,
+           "no heap allocation inside processBlock (" + std::to_string (alloccount::count.load()) + " over "
+               + std::to_string (r.totalSamples / block) + " blocks, " + std::to_string (r.hostNotes.size()) + " MIDI events)");
+}
+
+static void testPortCloseReleasesNotes()
+{
+    std::cout << "== no stuck notes when the port closes ==\n";
+    NoteCapAudioProcessor proc;
+    proc.setRateAndBufferSizeDetails (fs, block);
+    setParam (proc, "grid", 0);   // off: send immediately
+    MidiListener listener;
+    check (listener.connect (proc.getMidiOut().getName()), "listener connected");
+
+    // Chord still held when the transport keeps running (no stop at the end).
+    run (proc, testsynth::renderGuitar ({ { 0.3, testsynth::guitarChord ("D"), "D" } }, fs, 1.0), 0);
+    setParam (proc, "virtualPort", 0);
+    for (int i = 0; i < 40 && proc.getMidiOut().isOpen(); ++i)
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
+    // The fake host clock runs ahead of real time, so deliveries are scheduled up to ~1 s out.
+    const int64_t until = VirtualMidiOut::nowNs() + 1'500'000'000LL;
+    while (VirtualMidiOut::nowNs() < until)
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
+
+    // In delivery order, a note is stuck if the last thing the receiver heard for it was a note-on.
+    std::map<int, bool> held;
+    int offs = 0;
+    for (const auto& e : listener.snapshot())
+    {
+        const bool on = (e.status & 0xf0) == 0x90 && e.data2 > 0;
+        held[e.data1] = on;
+        offs += on ? 0 : 1;
+    }
+    int stuck = 0;
+    for (const auto& [n, on] : held) stuck += on ? 1 : 0;
+    check (offs > 0 && stuck == 0, "closing the port leaves no stuck notes (" + std::to_string (stuck) + " stuck, "
+                                       + std::to_string (offs) + " note-offs delivered)");
+
+    // Same again with a host clock at real time (as in Live): note-ons arrive, then their releases.
+    NoteCapAudioProcessor live;
+    live.setRateAndBufferSizeDetails (fs, block);
+    setParam (live, "grid", 0);
+    MidiListener l2;
+    l2.connect (live.getMidiOut().getName());
+    FakePlayHead ph;
+    live.setPlayHead (&ph);
+    live.prepareToPlay (fs, block);
+    const auto audio = testsynth::renderGuitar ({ { 0.1, testsynth::guitarChord ("A"), "A" } }, fs, 0.5);
+    juce::AudioBuffer<float> buf (4, block);
+    juce::MidiBuffer midi;
+    for (size_t pos = 0; pos + block <= audio.size(); pos += block)
+    {
+        ph.info.setIsPlaying (true); ph.info.setBpm (bpm); ph.info.setPpqPosition ((double) pos / samplesPerBeat);
+        ph.info.setHostTimeNs ((uint64_t) VirtualMidiOut::nowNs());
+        buf.clear();
+        for (int i = 0; i < block; ++i) buf.setSample (2, i, audio[pos + (size_t) i]);
+        midi.clear();
+        live.processBlock (buf, midi);
+        std::this_thread::sleep_for (std::chrono::microseconds ((int) (block * 1.0e6 / fs)));  // real-time pacing
+    }
+    live.setPlayHead (nullptr);
+    setParam (live, "virtualPort", 0);
+    for (int i = 0; i < 40 && live.getMidiOut().isOpen(); ++i)
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
+    CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.3, false);
+    int ons2 = 0; held.clear();
+    for (const auto& e : l2.snapshot())
+    {
+        const bool on = (e.status & 0xf0) == 0x90 && e.data2 > 0;
+        held[e.data1] = on; ons2 += on ? 1 : 0;
+    }
+    stuck = 0;
+    for (const auto& [n, on] : held) stuck += on ? 1 : 0;
+    check (ons2 > 0 && stuck == 0, "real-time clock: " + std::to_string (ons2) + " notes delivered, all released on close");
+}
+
+static void testRecoversFromNaN()
+{
+    std::cout << "== bad input ==\n";
+    NoteCapAudioProcessor proc;
+    proc.setRateAndBufferSizeDetails (fs, block);
+    setParam (proc, "grid", 0);
+    setParam (proc, "virtualPort", 0);
+    auto audio = testsynth::renderGuitar ({ { 0.5, testsynth::guitarChord ("C"), "C" },
+                                            { 2.0, testsynth::guitarChord ("G"), "G" } }, fs, 3.0);
+    for (size_t i = (size_t) (1.2 * fs); i < (size_t) (1.3 * fs); ++i)
+        audio[i] = (i % 3 == 0) ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity();
+    const auto chords = chordsBySample (run (proc, audio).hostNotes);
+    bool sawG = false;
+    for (const auto& [s, v] : chords) sawG |= s > (int64_t) (1.9 * fs) && v == closeVoicing ("G");
+    check (sawG, "still detects the next chord after 100 ms of NaN/Inf input");
+}
+
+static void testConcurrentInstances()
+{
+    std::cout << "== four instances processing concurrently ==\n";
+    const char* names[] = { "C", "Am", "F", "G" };
+    std::vector<std::unique_ptr<NoteCapAudioProcessor>> procs;
+    std::vector<std::unique_ptr<MidiListener>> listeners;
+    std::vector<std::vector<float>> audio;
+    bool allConnected = true;
+    for (int i = 0; i < 4; ++i)
+    {
+        procs.push_back (std::make_unique<NoteCapAudioProcessor>());
+        procs.back()->setRateAndBufferSizeDetails (fs, block);
+        setParam (*procs.back(), "grid", 3);
+        setParam (*procs.back(), "channel", (float) (i + 1));   // tags every message with its instance
+        listeners.push_back (std::make_unique<MidiListener>());
+        allConnected &= listeners.back()->connect (procs.back()->getMidiOut().getName());
+        audio.push_back (testsynth::renderGuitar ({ { 0.6, testsynth::guitarChord (names[i]), names[i] },
+                                                    { 1.6, testsynth::guitarChord (names[i]), names[i] } }, fs, 2.5,
+                                                  0.0, (unsigned) (20 + i)));
+    }
+    check (allConnected, "each instance has its own connectable port");
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 4; ++i)
+        threads.emplace_back ([&, i] { run (*procs[(size_t) i], audio[(size_t) i]); });
+    for (auto& t : threads) t.join();
+    const int64_t until = VirtualMidiOut::nowNs() + 3'500'000'000LL;
+    while (VirtualMidiOut::nowNs() < until)
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
+
+    bool isolated = true;
+    std::string detail;
+    for (int i = 0; i < 4; ++i)
+    {
+        std::set<int> got;
+        int balance = 0, foreign = 0;
+        for (const auto& e : listeners[(size_t) i]->snapshot())
+        {
+            if ((e.status & 0x0f) != i) ++foreign;
+            const bool on = (e.status & 0xf0) == 0x90 && e.data2 > 0;
+            balance += on ? 1 : -1;
+            if (on) got.insert (e.data1);
+        }
+        const auto triad = closeVoicing (names[i]);
+        const bool hasTriad = std::includes (got.begin(), got.end(), triad.begin(), triad.end());
+        const bool ok = foreign == 0 && balance == 0 && hasTriad;
+        isolated &= ok;
+        detail += std::string (names[i]) + (ok ? " ok " : " WRONG(foreign=" + std::to_string (foreign)
+                                                      + " balance=" + std::to_string (balance) + ") ");
+    }
+    check (isolated, "no crosstalk between ports; each got its chord with balanced notes (" + detail + ")");
+}
+
 int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -388,5 +577,9 @@ int main()
     testTestMode();
     testFixedLength();
     testStateAndPorts();
+    testNoAllocationInProcessBlock();
+    testPortCloseReleasesNotes();
+    testRecoversFromNaN();
+    testConcurrentInstances();
     return testutil::finish ("test_plugin");
 }

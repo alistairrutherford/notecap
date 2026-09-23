@@ -115,8 +115,10 @@ namespace notecap
         {
             for (int i = 0; i < n; ++i)
             {
+                // A NaN/Inf from upstream would latch in the IIR filters forever.
+                const float in = std::isfinite (x[i]) ? x[i] : 0.0f;
                 float y;
-                if (! decimator.push (x[i], y)) continue;
+                if (! decimator.push (in, y)) continue;
                 ring[(size_t) (writePos++ & (ringSize - 1))] = y;
                 if (++hopCount >= hopSize)
                 {

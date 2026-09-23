@@ -7,8 +7,12 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <array>
 #include <atomic>
+#include <bitset>
 #include <cstdint>
+
+using MIDITimeStampValue = uint64_t;
 
 class VirtualMidiOut : private juce::Thread
 {
@@ -39,6 +43,7 @@ public:
 private:
     void run() override;
     void drain();
+    void releaseActiveNotes();
 
     struct Message
     {
@@ -54,6 +59,12 @@ private:
     std::atomic<uint32_t> source { 0 };   // MIDIEndpointRef
     int index = 0;
     std::atomic<uint32_t> numSent { 0 };
+
+    // Notes the receiver currently holds, per channel. Only touched by the
+    // consumer side (sender thread, or close() once that thread has stopped),
+    // so closing the port can always release them: no stuck notes.
+    std::array<std::bitset<128>, 16> activeNotes {};
+    MIDITimeStampValue latestStamp = 0;   // CoreMIDI delivers at the timestamp, so releases must not precede it
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VirtualMidiOut)
 };

@@ -112,8 +112,8 @@ namespace notecap
                     if (i != bassPc) second = std::max (second, bass[(size_t) i]);
 
                 if (bassPc != best.chord.root && bass[(size_t) bassPc] > 1.5f * second)
-                    for (int pc : best.chord.pitchClasses())
-                        if (pc == bassPc) best.chord.bass = bassPc;
+                    for (int iv : qualityInfo (best.chord.quality).intervals)   // no allocation: audio thread
+                        if ((best.chord.root + iv) % 12 == bassPc) best.chord.bass = bassPc;
             }
             return best;
         }

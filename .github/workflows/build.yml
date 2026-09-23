@@ -55,3 +55,13 @@ jobs:
 
       - name: Build offline evaluator
         run: repo/Tools/eval/build.sh
+
+      - name: Package installer (ad-hoc signed)
+        run: repo/Tools/package.sh --no-build
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: NoteCap-installer
+          path: repo/dist/NoteCap-*.pkg
+          if-no-files-found: error

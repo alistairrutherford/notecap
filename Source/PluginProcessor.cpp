@@ -80,6 +80,7 @@ void NoteCapAudioProcessor::timerCallback()
 
 void NoteCapAudioProcessor::syncPortWithParameter()
 {
+    const juce::ScopedLock sl (portLock);
     const bool want = pVirtualPort->load() > 0.5f;
     if (want && ! midiOut.isOpen())
         midiOut.open (savedPortIndex);
@@ -176,8 +177,9 @@ void NoteCapAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         if (auto pos = ph->getPosition())
         {
             t.playing = pos->getIsPlaying();
-            if (auto b = pos->getBpm()) t.bpm = std::max (20.0, *b);
-            if (auto p = pos->getPpqPosition()) t.ppq = *p;
+            if (auto b = pos->getBpm(); b && std::isfinite (*b)) t.bpm = juce::jlimit (20.0, 999.0, *b);
+            if (auto p = pos->getPpqPosition(); p && std::isfinite (*p)) t.ppq = *p;
+            else t.playing = false;   // no usable song position: don't quantise
             if (auto h = pos->getHostTimeNs()) t.hostNs = (int64_t) *h;
         }
 
@@ -479,6 +481,7 @@ void NoteCapAudioProcessor::setStateInformation (const void* data, int sizeInByt
 
             // Reclaim the port name this instance had when the set was saved,
             // so Live's track routing ("MIDI From: NoteCap Out 2") still matches.
+            const juce::ScopedLock sl (portLock);
             if (midiOut.isOpen() && savedPortIndex > 0 && midiOut.getIndex() != savedPortIndex)
                 midiOut.open (savedPortIndex);
             syncPortWithParameter();

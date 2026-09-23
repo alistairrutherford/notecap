@@ -92,7 +92,8 @@ bool VirtualMidiOut::open (int preferredIndex)
     reg.usedIndices.insert (chosen);
     ++reg.clientUsers;
     index = chosen;
-    fifo.reset();
+    activeNotes = {};
+    latestStamp = 0;
     source.store ((uint32_t) endpoint);
     startThread (juce::Thread::Priority::highest);
     return true;
@@ -108,6 +109,7 @@ void VirtualMidiOut::close()
     signalThreadShouldExit();
     stopThread (500);
     drain();
+    releaseActiveNotes();
 
     source.store (0);
     MIDIEndpointDispose (endpoint);
@@ -172,9 +174,14 @@ void VirtualMidiOut::drain()
             for (int i = start; i < start + size && packet != nullptr; ++i)
             {
                 const auto& m = buffer[i];
+                const int status = m.bytes[0] & 0xf0, channel = m.bytes[0] & 0x0f, note = m.bytes[1] & 0x7f;
+                if (status == 0x90 && m.bytes[2] > 0) activeNotes[(size_t) channel].set ((size_t) note);
+                else if (status == 0x80 || status == 0x90) activeNotes[(size_t) channel].reset ((size_t) note);
                 // Universal MIDI Packet, MIDI 1.0 channel voice message (type 2), group 0.
                 const UInt32 word = (0x2u << 28) | ((UInt32) m.bytes[0] << 16) | ((UInt32) m.bytes[1] << 8) | (UInt32) m.bytes[2];
-                packet = MIDIEventListAdd (list, sizeof (storage), packet, nsToHostTicks (m.hostTimeNs), 1, &word);
+                const MIDITimeStamp stamp = nsToHostTicks (m.hostTimeNs);
+                latestStamp = std::max<MIDITimeStampValue> (latestStamp, stamp);
+                packet = MIDIEventListAdd (list, sizeof (storage), packet, stamp, 1, &word);
                 ++taken;
             }
         };
@@ -184,4 +191,45 @@ void VirtualMidiOut::drain()
         if (taken > 0 && MIDIReceivedEventList (endpoint, list) == noErr)
             numSent.fetch_add ((uint32_t) taken);
     }
+}
+
+void VirtualMidiOut::releaseActiveNotes()
+{
+    const auto endpoint = (MIDIEndpointRef) source.load();
+    if (endpoint == 0)
+        return;
+
+    // CoreMIDI holds future-stamped events until their time and drops whatever is
+    // still pending when the source is disposed. So: release immediately (covers
+    // notes already delivered), release again after the latest scheduled event
+    // (covers note-ons still pending), and give the latter a moment to go out.
+    const MIDITimeStamp now = mach_absolute_time();
+    const MIDITimeStamp after = std::max<MIDITimeStampValue> (now, latestStamp + 1);
+
+    auto sendReleases = [&] (MIDITimeStamp when)
+    {
+        alignas (MIDIEventList) uint8_t storage[4096];
+        auto* list = reinterpret_cast<MIDIEventList*> (storage);
+        MIDIEventPacket* packet = MIDIEventListInit (list, kMIDIProtocol_1_0);
+        int count = 0;
+        for (UInt32 ch = 0; ch < 16; ++ch)
+            for (UInt32 note = 0; note < 128 && packet != nullptr; ++note)
+                if (activeNotes[ch].test (note))
+                {
+                    const UInt32 word = (0x2u << 28) | ((0x80u | ch) << 16) | (note << 8);
+                    packet = MIDIEventListAdd (list, sizeof (storage), packet, when, 1, &word);
+                    ++count;
+                }
+        if (count > 0)
+            MIDIReceivedEventList (endpoint, list);
+        return count;
+    };
+
+    if (sendReleases (now) > 0 && after > now)
+    {
+        sendReleases (after);
+        const int64_t waitNs = std::min<int64_t> (250'000'000, (int64_t) ((__int128) (after - now) * timebase().numer / timebase().denom));
+        juce::Thread::sleep ((int) (waitNs / 1'000'000) + 2);
+    }
+    activeNotes = {};
 }

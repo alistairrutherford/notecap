@@ -256,8 +256,44 @@ notecap/
 | 3. Real-time integration | **Done** | Block-size independent. Mean decision latency is about 130 ms. |
 | 4. Quantizer + voicing | **Done** | Nearest / Next-line, swing, triplets, Hold / fixed lengths; close / open / bass + chord voicings. Integration-tested sample-accurately against a fake 120 BPM transport. |
 | 5. UI | **First version done** | Chord, pitch-class and status displays, plus all parameters. Snapshot: `Tests/snapshot_editor.cpp`. |
-| 6. Hardening | Not started | Codesigning, notarization and an installer, depending on your answer to Q3. |
+| 6. Hardening | **Mostly done** | See the Phase 6 log below. Remaining: Developer ID signing and notarization (needs certificates), `pluginval`, and checks only possible in Live (plugin rescan, fresh-Mac install). |
 
 **Next steps:** run the Phase 0 checklist in Live 12, then record 5–10 real takes
 (with `.lab` references) to measure accuracy on real guitar/keys and retune if
 needed.
+
+### Phase 6 log
+
+**Fixed**
+- **Audio-thread allocation:** `ChordClassifier::classify()` called
+  `Chord::pitchClasses()` (a `std::vector`) on every frame. It now iterates the
+  static interval table.
+- **Stuck notes on the virtual port:** closing the port while a chord was held
+  (port turned off, plugin deleted, set reloaded onto another port) left notes
+  on at the receiver. The sender thread now tracks every note it has sent and
+  releases them on close. CoreMIDI holds future-stamped events until their
+  time and drops pending ones when a source is disposed. So the releases go
+  out immediately and again after the latest scheduled event, with up to a
+  250 ms wait before disposal.
+- **Port lifecycle race:** the timer (message thread) and
+  `setStateInformation` (any thread) could open and close the port at the same
+  time. They're now serialised with a lock. Removed a FIFO `reset()` that could
+  race with the audio thread.
+- **Bad input:** NaN/Inf samples are zeroed before the IIR filters, where they
+  would otherwise latch forever. A non-finite tempo or song position from the
+  host is ignored.
+
+**Added**
+- Integration tests for the fixes above, plus four concurrent instances with
+  channel-tagged output and no crosstalk.
+- `Tools/package.sh`: builds a universal (arm64 + x86_64) `.pkg` with AU/VST3
+  choices, non-relocatable bundles and an AU-cache refresh. It signs,
+  notarizes and staples when Developer ID variables are set. CI builds and
+  uploads it on every push.
+
+**Open**
+- A Developer ID Application/Installer certificate. This Mac only has an
+  *Apple Development* identity, so packages are ad-hoc signed for now.
+- `pluginval`: not installed; it needs a download from Tracktion's GitHub
+  releases.
+- Checks that need Live: plugin rescan, and installing on a clean Mac.

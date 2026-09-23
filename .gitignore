@@ -20,3 +20,6 @@ Tests/build/
 
 # Tools build output
 Tools/eval/build/
+
+# Installer output
+dist/

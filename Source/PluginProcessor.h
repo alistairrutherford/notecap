@@ -104,6 +104,7 @@ private:
     notecap::ChordEventList events;
     VirtualMidiOut midiOut;
     int savedPortIndex = 0;
+    juce::CriticalSection portLock;   // port open/close: timer (message thread) vs setStateInformation (any thread)
 
     juce::AudioBuffer<float> monoBuffer;
     double sampleRate = 44100.0;
