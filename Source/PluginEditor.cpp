@@ -176,7 +176,8 @@ void StatusDisplay::paint (juce::Graphics& g)
 
     const auto& out = proc.getMidiOut();
     const bool wantPort = proc.apvts.getRawParameterValue ("virtualPort")->load() > 0.5f;
-    row ("MIDI port", out.isOpen() ? out.getName() : (wantPort ? "failed to open" : "off"),
+    row ("MIDI port", out.isOpen() ? out.getName()
+                                   : (wantPort ? "failed to open (error " + juce::String (out.getLastError()) + ")" : "off"),
          out.isOpen() ? colours::good : (wantPort ? colours::bad : colours::dim));
 
     const bool playing = proc.readout.playing.load();

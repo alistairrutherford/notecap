@@ -9,11 +9,12 @@ namespace
 {
     // One CoreMIDI client per process, shared by every instance, plus the set of
     // port indices in use so each instance gets a distinct, stable port name.
+    // The client is never disposed: Apple warns that disposing a process's last
+    // client can make the MIDI server exit, after which MIDIClientCreate fails.
     struct Registry
     {
         std::mutex lock;
         MIDIClientRef client = 0;
-        int clientUsers = 0;
         std::set<int> usedIndices;
 
         static Registry& get()
@@ -65,9 +66,11 @@ bool VirtualMidiOut::open (int preferredIndex)
 
     if (reg.client == 0)
     {
-        if (MIDIClientCreateWithBlock (CFSTR ("NoteCap"), &reg.client, nullptr) != noErr)
+        const OSStatus err = MIDIClientCreateWithBlock (CFSTR ("NoteCap"), &reg.client, nullptr);
+        if (err != noErr)
         {
             reg.client = 0;
+            lastError.store ((int32_t) err);
             return false;
         }
     }
@@ -82,7 +85,7 @@ bool VirtualMidiOut::open (int preferredIndex)
     CFRelease (name);
     if (err != noErr || endpoint == 0)
     {
-        if (reg.clientUsers == 0) { MIDIClientDispose (reg.client); reg.client = 0; }
+        lastError.store (err != noErr ? (int32_t) err : -1);
         return false;
     }
 
@@ -90,7 +93,7 @@ bool VirtualMidiOut::open (int preferredIndex)
     MIDIObjectSetStringProperty (endpoint, kMIDIPropertyManufacturer, CFSTR ("NoteCap"));
 
     reg.usedIndices.insert (chosen);
-    ++reg.clientUsers;
+    lastError.store (0);
     index = chosen;
     activeNotes = {};
     latestStamp = 0;
@@ -117,11 +120,6 @@ void VirtualMidiOut::close()
     auto& reg = Registry::get();
     std::lock_guard<std::mutex> guard (reg.lock);
     reg.usedIndices.erase (index);
-    if (--reg.clientUsers == 0 && reg.client != 0)
-    {
-        MIDIClientDispose (reg.client);
-        reg.client = 0;
-    }
     index = 0;
 }
 

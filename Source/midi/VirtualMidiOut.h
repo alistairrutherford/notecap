@@ -44,6 +44,9 @@ public:
 
     uint32_t getNumSent() const noexcept { return numSent.load(); }
 
+    // OSStatus of the last failed open() (0 after a successful one).
+    int32_t getLastError() const noexcept { return lastError.load(); }
+
 private:
     void run() override;
     void drain();
@@ -63,6 +66,7 @@ private:
     std::atomic<uint32_t> source { 0 };   // MIDIEndpointRef
     int index = 0;
     std::atomic<uint32_t> numSent { 0 };
+    std::atomic<int32_t> lastError { 0 };
 
     // Notes the receiver currently holds, per channel. Only touched by the
     // consumer side (sender thread, or close() once that thread has stopped),

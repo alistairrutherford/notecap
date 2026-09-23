@@ -72,7 +72,10 @@ namespace
         bool connect (const VirtualMidiOut& out)
         {
             if (! out.isOpen()) return false;
-            if (MIDIClientCreateWithBlock (CFSTR ("NoteCapTest"), &client, nullptr) != noErr) return false;
+            // One client for the whole test process, never disposed (see VirtualMidiOut.cpp).
+            static MIDIClientRef sharedClient = [] { MIDIClientRef c = 0; MIDIClientCreateWithBlock (CFSTR ("NoteCapTest"), &c, nullptr); return c; }();
+            client = sharedClient;
+            if (client == 0) return false;
             auto receive = ^(const MIDIEventList* list, void*)
             {
                 const MIDIEventPacket* p = &list->packet[0];
@@ -102,7 +105,6 @@ namespace
         ~MidiListener()
         {
             if (port) MIDIPortDispose (port);
-            if (client) MIDIClientDispose (client);
         }
     };
 
@@ -239,7 +241,7 @@ static void testNearestWithPort()
     setParam (proc, "qmode", 0);    // nearest
 
     const auto& out = proc.getMidiOut();
-    check (out.isOpen(), "virtual port opened as \"" + out.getName().toStdString() + "\"");
+    check (out.isOpen(), "virtual port opened as \"" + out.getName().toStdString() + "\" (last error " + std::to_string (out.getLastError()) + ")");
 
     MidiListener listener;
     check (listener.connect (out), "test client connects to the port");
@@ -514,6 +516,7 @@ static void testConcurrentInstances()
     std::vector<std::unique_ptr<MidiListener>> listeners;
     std::vector<std::vector<float>> audio;
     bool allConnected = true;
+    std::string portInfo;
     for (int i = 0; i < 4; ++i)
     {
         procs.push_back (std::make_unique<NoteCapAudioProcessor>());
@@ -521,12 +524,18 @@ static void testConcurrentInstances()
         setParam (*procs.back(), "grid", 3);
         setParam (*procs.back(), "channel", (float) (i + 1));   // tags every message with its instance
         listeners.push_back (std::make_unique<MidiListener>());
-        allConnected &= listeners.back()->connect (procs.back()->getMidiOut());
+        const auto& out = procs.back()->getMidiOut();
+        const bool ok = listeners.back()->connect (out);
+        if (! ok)
+            std::cout << "     instance " << i << ": port open=" << out.isOpen() << " name=" << out.getName()
+                      << " endpoint=" << out.getEndpoint() << " lastError=" << out.getLastError() << "\n";
+        allConnected &= ok;
+        portInfo += out.getName().toStdString() + (out.isOpen() ? "" : " (closed, err " + std::to_string (out.getLastError()) + ")") + "; ";
         audio.push_back (testsynth::renderGuitar ({ { 0.6, testsynth::guitarChord (names[i]), names[i] },
                                                     { 1.6, testsynth::guitarChord (names[i]), names[i] } }, fs, 2.5,
                                                   0.0, (unsigned) (20 + i)));
     }
-    check (allConnected, "each instance has its own connectable port");
+    check (allConnected, "each instance has its own connectable port (" + portInfo + ")");
 
     std::vector<std::thread> threads;
     for (int i = 0; i < 4; ++i)
