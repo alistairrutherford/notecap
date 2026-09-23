@@ -24,6 +24,7 @@ jobs:
 
       - name: Build Projucer
         run: |
+          set -o pipefail
           xcodebuild -project JUCE/extras/Projucer/Builds/MacOSX/Projucer.xcodeproj \
                      -configuration Release build | tail -3
 
@@ -39,6 +40,8 @@ jobs:
 
       - name: Build plugin
         run: |
+          # Without pipefail the step's status is grep's, so a failed build would pass.
+          set -o pipefail
           xcodebuild -project repo/Builds/MacOSX/NoteCap.xcodeproj \
                      -target "NoteCap - All" -configuration Release \
                      CODE_SIGNING_ALLOWED=NO build | \
