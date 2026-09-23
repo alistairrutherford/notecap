@@ -67,8 +67,11 @@ namespace
             return (uint64_t) ((__int128) t * tb.numer / tb.denom);
         }
 
-        bool connect (const juce::String& sourceName)
+        // Connects to this exact endpoint. (Resolving by name is unreliable when a
+        // port with the same name was just disposed: the MIDI server may still list it.)
+        bool connect (const VirtualMidiOut& out)
         {
+            if (! out.isOpen()) return false;
             if (MIDIClientCreateWithBlock (CFSTR ("NoteCapTest"), &client, nullptr) != noErr) return false;
             auto receive = ^(const MIDIEventList* list, void*)
             {
@@ -87,24 +90,7 @@ namespace
                 }
             };
             if (MIDIInputPortCreateWithProtocol (client, CFSTR ("in"), kMIDIProtocol_1_0, &port, receive) != noErr) return false;
-
-            for (int attempt = 0; attempt < 50; ++attempt)
-            {
-                for (ItemCount i = 0; i < MIDIGetNumberOfSources(); ++i)
-                {
-                    const MIDIEndpointRef src = MIDIGetSource (i);
-                    CFStringRef name = nullptr;
-                    if (MIDIObjectGetStringProperty (src, kMIDIPropertyName, &name) == noErr && name != nullptr)
-                    {
-                        const auto n = juce::String::fromCFString (name);
-                        CFRelease (name);
-                        if (n == sourceName)
-                            return MIDIPortConnectSource (port, src, nullptr) == noErr;
-                    }
-                }
-                CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
-            }
-            return false;
+            return MIDIPortConnectSource (port, (MIDIEndpointRef) out.getEndpoint(), nullptr) == noErr;
         }
 
         std::vector<Event> snapshot()
@@ -256,7 +242,7 @@ static void testNearestWithPort()
     check (out.isOpen(), "virtual port opened as \"" + out.getName().toStdString() + "\"");
 
     MidiListener listener;
-    check (listener.connect (out.getName()), "test client connects to the port");
+    check (listener.connect (out), "test client connects to the port");
 
     const auto strums = offGridStrums();
     const auto r = run (proc, testsynth::renderGuitar (strums, fs, 5.0));
@@ -439,7 +425,7 @@ static void testPortCloseReleasesNotes()
     proc.setRateAndBufferSizeDetails (fs, block);
     setParam (proc, "grid", 0);   // off: send immediately
     MidiListener listener;
-    check (listener.connect (proc.getMidiOut().getName()), "listener connected");
+    check (listener.connect (proc.getMidiOut()), "listener connected");
 
     // Chord still held when the transport keeps running (no stop at the end).
     run (proc, testsynth::renderGuitar ({ { 0.3, testsynth::guitarChord ("D"), "D" } }, fs, 1.0), 0);
@@ -470,7 +456,7 @@ static void testPortCloseReleasesNotes()
     live.setRateAndBufferSizeDetails (fs, block);
     setParam (live, "grid", 0);
     MidiListener l2;
-    l2.connect (live.getMidiOut().getName());
+    check (l2.connect (live.getMidiOut()), "listener connected (real-time clock)");
     FakePlayHead ph;
     live.setPlayHead (&ph);
     live.prepareToPlay (fs, block);
@@ -535,7 +521,7 @@ static void testConcurrentInstances()
         setParam (*procs.back(), "grid", 3);
         setParam (*procs.back(), "channel", (float) (i + 1));   // tags every message with its instance
         listeners.push_back (std::make_unique<MidiListener>());
-        allConnected &= listeners.back()->connect (procs.back()->getMidiOut().getName());
+        allConnected &= listeners.back()->connect (procs.back()->getMidiOut());
         audio.push_back (testsynth::renderGuitar ({ { 0.6, testsynth::guitarChord (names[i]), names[i] },
                                                     { 1.6, testsynth::guitarChord (names[i]), names[i] } }, fs, 2.5,
                                                   0.0, (unsigned) (20 + i)));

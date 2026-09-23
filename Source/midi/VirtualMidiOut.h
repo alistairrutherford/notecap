@@ -29,6 +29,10 @@ public:
     int getIndex() const noexcept { return index; }
     juce::String getName() const { return nameForIndex (index); }
 
+    // The CoreMIDI endpoint (MIDIEndpointRef), 0 when closed. Lets in-process
+    // clients (tests) connect to this exact port rather than resolving it by name.
+    uint32_t getEndpoint() const noexcept { return source.load(); }
+
     static juce::String nameForIndex (int i) { return "NoteCap Out " + juce::String (i); }
 
     // Audio thread (real-time safe). `hostTimeNs` uses the mach host clock.
