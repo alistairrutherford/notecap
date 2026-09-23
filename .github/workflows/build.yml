@@ -11,12 +11,12 @@ jobs:
     runs-on: macos-14
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: repo
 
       - name: Checkout JUCE 8.0.14
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: juce-framework/JUCE
           ref: 8.0.14

@@ -9,11 +9,15 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <new>
 #include <set>
+#include <string>
 #include <thread>
+#include <vector>
 
 using testutil::check;
 

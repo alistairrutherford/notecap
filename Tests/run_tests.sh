@@ -11,12 +11,23 @@ SRC="$HERE/../Source"
 BUILD="$HERE/build"
 mkdir -p "$BUILD"
 
+# On GitHub Actions, turn compiler errors into ::error annotations (readable
+# through the public API, unlike the job log).
+annotate_errors () {
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        grep -E "error:" "$1" | head -20 | sed 's/%/%25/g; s/^/::error title=Compile error::/'
+    fi
+}
+
 compile_and_run () {
     local name="$1"
     echo "== building $name =="
-    clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    if ! clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
         -I "$SRC" -I "$HERE" "$HERE/$name.cpp" \
-        -framework Accelerate -o "$BUILD/$name"
+        -framework Accelerate -o "$BUILD/$name" 2> "$BUILD/$name.err"; then
+        cat "$BUILD/$name.err" >&2; annotate_errors "$BUILD/$name.err"; exit 1
+    fi
+    cat "$BUILD/$name.err" >&2
     "$BUILD/$name"
 }
 

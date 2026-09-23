@@ -256,7 +256,7 @@ notecap/
 | 3. Real-time integration | **Done** | Block-size independent. Mean decision latency is about 130 ms. |
 | 4. Quantizer + voicing | **Done** | Nearest / Next-line, swing, triplets, Hold / fixed lengths; close / open / bass + chord voicings. Integration-tested sample-accurately against a fake 120 BPM transport. |
 | 5. UI | **First version done** | Chord, pitch-class and status displays, plus all parameters. Snapshot: `Tests/snapshot_editor.cpp`. |
-| 6. Hardening | **Mostly done** | See the Phase 6 log below. Remaining: Developer ID signing and notarization (needs certificates), `pluginval`, and checks only possible in Live (plugin rescan, fresh-Mac install). |
+| 6. Hardening | **Mostly done** | See the Phase 6 log below. `pluginval` passes at strictness 10. Remaining: Developer ID signing and notarization (needs certificates), and checks only possible in Live (plugin rescan, fresh-Mac install). |
 
 **Next steps:** run the Phase 0 checklist in Live 12, then record 5–10 real takes
 (with `.lab` references) to measure accuracy on real guitar/keys and retune if
@@ -294,6 +294,12 @@ needed.
 **Open**
 - A Developer ID Application/Installer certificate. This Mac only has an
   *Apple Development* identity, so packages are ad-hoc signed for now.
-- `pluginval`: not installed; it needs a download from Tracktion's GitHub
-  releases.
+- ~~`pluginval`~~ **Passed (v1.0.4, strictness 10)**, including parameter
+  thread safety, fuzzing, state restoration and bus-layout tests.
+  - VST3: clean, no warnings.
+  - AU: passes with two warnings that come from the AU format, not from
+    NoteCap: "current program is -1" (the AU convention for no factory
+    preset), and "disabling non-main buses failed" (an AU host can't disable
+    an input bus; Live never disables the sidechain).
+  - Not yet run in CI.
 - Checks that need Live: plugin rescan, and installing on a clean Mac.

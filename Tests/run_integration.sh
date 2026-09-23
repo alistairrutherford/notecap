@@ -19,6 +19,14 @@ XCPROJ="$PROJ/Builds/MacOSX/NoteCap.xcodeproj"
 
 BUILD="$HERE/build"; mkdir -p "$BUILD"
 
+# On GitHub Actions, turn compiler errors into ::error annotations (readable
+# through the public API, unlike the job log).
+annotate_errors () {
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        grep -E "error:" "$1" | head -20 | sed 's/%/%25/g; s/^/::error title=Compile error::/'
+    fi
+}
+
 # The processor sources use JucePlugin_* macros that Xcode passes on the command
 # line. Reproduce them as a defines header from the target build settings.
 xcodebuild -project "$XCPROJ" -target "NoteCap - Standalone Plugin" \
@@ -34,9 +42,11 @@ with open(sys.argv[2], "w") as f:
         f.write(f"#define {k} {v}\n" if _ else f"#define {k}\n")
 PY
 
-clang++ -std=c++17 -x objective-c++ -O1 -include "$BUILD/defs.h" \
+if ! clang++ -std=c++17 -x objective-c++ -O1 -include "$BUILD/defs.h" \
     -I "$PROJ/JuceLibraryCode" -I "$JUCE_DIR/modules" -I "$PROJ/Source" -I "$HERE" \
-    -c "$HERE/test_plugin.cpp" -o "$BUILD/test_plugin.o"
+    -c "$HERE/test_plugin.cpp" -o "$BUILD/test_plugin.o" 2> "$BUILD/test_plugin.err"; then
+    cat "$BUILD/test_plugin.err" >&2; annotate_errors "$BUILD/test_plugin.err"; exit 1
+fi
 
 clang++ -O1 "$BUILD/test_plugin.o" "$LIB" \
     -framework Cocoa -framework Foundation -framework CoreFoundation -framework Security \

@@ -1,6 +1,7 @@
 // Test-signal generators: Karplus-Strong strummed guitar chords and additive tones.
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <random>
