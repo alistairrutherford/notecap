@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="NtCapP" name="NoteCap" projectType="audioplug" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="0.1.0"
+              companyName="Alistair Rutherford" bundleIdentifier="com.alistairrutherford.notecap"
+              pluginFormats="buildAU,buildVST3,buildStandalone" pluginCharacteristicsValue="pluginProducesMidiOut"
+              pluginName="NoteCap" pluginDesc="Listens to audio, detects chords and sends them as quantized MIDI"
+              pluginManufacturer="Alistair Rutherford" pluginManufacturerCode="ARut"
+              pluginCode="NtCp" pluginAUMainType="'aufx'" pluginVST3Category="Fx,Analyzer,Tools"
+              cppLanguageStandard="17">
+  <MAINGROUP id="mainGp" name="NoteCap">
+    <GROUP id="srcGp0" name="Source">
+      <FILE id="fPrc01" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="Source/PluginProcessor.cpp"/>
+      <FILE id="fPrh01" name="PluginProcessor.h" compile="0" resource="0"
+            file="Source/PluginProcessor.h"/>
+      <FILE id="fEdc01" name="PluginEditor.cpp" compile="1" resource="0"
+            file="Source/PluginEditor.cpp"/>
+      <FILE id="fEdh01" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+      <GROUP id="coreGp" name="core">
+        <FILE id="fCtp01" name="ChordTypes.h" compile="0" resource="0" file="Source/core/ChordTypes.h"/>
+        <FILE id="fDsp01" name="Dsp.h" compile="0" resource="0" file="Source/core/Dsp.h"/>
+        <FILE id="fChr01" name="ChromaExtractor.h" compile="0" resource="0"
+              file="Source/core/ChromaExtractor.h"/>
+        <FILE id="fOns01" name="OnsetDetector.h" compile="0" resource="0"
+              file="Source/core/OnsetDetector.h"/>
+        <FILE id="fCls01" name="ChordClassifier.h" compile="0" resource="0"
+              file="Source/core/ChordClassifier.h"/>
+        <FILE id="fEng01" name="ChordEngine.h" compile="0" resource="0" file="Source/core/ChordEngine.h"/>
+        <FILE id="fQnt01" name="Quantizer.h" compile="0" resource="0" file="Source/core/Quantizer.h"/>
+        <FILE id="fVoi01" name="Voicing.h" compile="0" resource="0" file="Source/core/Voicing.h"/>
+      </GROUP>
+      <GROUP id="midiGp" name="midi">
+        <FILE id="fVmc01" name="VirtualMidiOut.cpp" compile="1" resource="0"
+              file="Source/midi/VirtualMidiOut.cpp"/>
+        <FILE id="fVmh01" name="VirtualMidiOut.h" compile="0" resource="0"
+              file="Source/midi/VirtualMidiOut.h"/>
+      </GROUP>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_plugin_client" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="0"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
+  <EXPORTFORMATS>
+    <XCODE_MAC targetFolder="Builds/MacOSX" extraFrameworks="CoreMIDI,Accelerate">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="NoteCap" macOSDeploymentTarget="12.0" osxArchitecture="Standard"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="NoteCap" macOSDeploymentTarget="12.0" osxArchitecture="Standard"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_plugin_client" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_dsp" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="/Users/alistairrutherford/Development/JUCE/modules"/>
+      </MODULEPATHS>
+    </XCODE_MAC>
+  </EXPORTFORMATS>
+</JUCERPROJECT>

@@ -1,0 +1,54 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: Build (AU + VST3 + Standalone) and test
+    runs-on: macos-14
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Checkout JUCE 8.0.14
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.14
+          path: JUCE
+
+      - name: Build Projucer
+        run: |
+          xcodebuild -project JUCE/extras/Projucer/Builds/MacOSX/Projucer.xcodeproj \
+                     -configuration Release build | tail -3
+
+      - name: Point module paths at the runner's JUCE and regenerate the project
+        run: |
+          JMOD="$GITHUB_WORKSPACE/JUCE/modules"
+          # The committed .jucer holds developer-machine module paths; rewrite
+          # both the absolute and relative forms to this runner's checkout.
+          sed -i '' "s#/Users/alistairrutherford/Development/JUCE/modules#$JMOD#g" repo/NoteCap.jucer
+          sed -i '' "s#\.\./\.\./\.\./JUCE/modules#$JMOD#g" repo/NoteCap.jucer
+          PROJUCER="JUCE/extras/Projucer/Builds/MacOSX/build/Release/Projucer.app/Contents/MacOS/Projucer"
+          "$PROJUCER" --resave repo/NoteCap.jucer
+
+      - name: Build plugin
+        run: |
+          xcodebuild -project repo/Builds/MacOSX/NoteCap.xcodeproj \
+                     -target "NoteCap - All" -configuration Release \
+                     CODE_SIGNING_ALLOWED=NO build | \
+            grep -E "error:|BUILD (SUCCEEDED|FAILED)" | sort -u
+
+      - name: Run unit tests and engine benchmark
+        run: repo/Tests/run_tests.sh
+
+      - name: Run integration test (processor + CoreMIDI virtual port)
+        run: JUCE_DIR="$GITHUB_WORKSPACE/JUCE" repo/Tests/run_integration.sh
+
+      - name: Build offline evaluator
+        run: repo/Tools/eval/build.sh
