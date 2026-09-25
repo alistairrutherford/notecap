@@ -5,6 +5,8 @@ recognises the chord being played, and sends it as **quantized MIDI** that a
 MIDI track can record. Built with JUCE. Also builds as VST3 and a Standalone
 app.
 
+![NoteCap plugin window: detected chord, pitch-class bars, status panel and the Detect / Quantize / Output controls](screenshot.png)
+
 See [PLAN.md](PLAN.md) for the full project plan and design decisions.
 
 ## How it fits into Live
