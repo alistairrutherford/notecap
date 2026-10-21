@@ -1,6 +1,6 @@
 # NoteCap: Project Plan
 
-A macOS Audio Unit plugin for Ableton Live that listens to audio (another track or a mic), works out which chord is being played, and outputs quantized MIDI chords that Live can record onto a MIDI track.
+A macOS VST3 plugin for Ableton Live that listens to audio (another track or a mic), works out which chord is being played, and outputs quantized MIDI chords that Live can record onto a MIDI track.
 
 ---
 
@@ -8,7 +8,7 @@ A macOS Audio Unit plugin for Ableton Live that listens to audio (another track 
 
 | # | Requirement | Acceptance criterion |
 |---|-------------|----------------------|
-| R1 | Loads as an AU plugin on a MIDI track in Live | Passes `auval`. Shows up in Live's Plug-ins browser. Can be inserted on a MIDI track. |
+| R1 | Loads as a plugin on a MIDI track in Live | Passes `pluginval` (strictness 10). Shows up in Live's Plug-ins browser. Can be inserted on a MIDI track. *(Originally "an AU plugin"; AU was dropped on 2026-10-21. See §2.)* |
 | R2 | Listens to audio from another track or a mic | The user picks the source track in Live's sidechain selector. A mic works through an audio track whose input is the mic. |
 | R3 | Identifies the chord being played | Offline accuracy of at least 80% (MIREX "majmin" weighted recall) on the test set. The chord appears in the UI within about 150 ms of the strum. |
 | R4 | Sends the chords as MIDI to the MIDI track so they can be recorded | Arming the MIDI track and pressing record produces a clip with the chord notes in it. |
@@ -26,6 +26,13 @@ Live's plugin hosting has three limits that affect this plugin directly. The arc
 2. **Live cannot route MIDI output from AU plugins.** It offers "MIDI From → *track* → *plugin*" routing only for VST plugins. MIDI that an AU sends to the host is effectively lost.
 3. **Live records the MIDI that arrives at a track's input, not the MIDI a plugin produces on that track.** Even with VST, the plugin's MIDI output has to be routed into a track's input before it can be recorded.
 4. **Sidechain support for AU plugins in Live is inconsistent.** Some forum reports say sidechain works only for VST2. This must be tested in Phase 0 against the user's Live version.
+
+> **Decision, 2026-10-21: AU support removed; NoteCap is VST3-only.** Points 1,
+> 2 and 4 below were the AU-specific limits; with VST3, Live supports sidechain
+> input and can route the plugin's MIDI output to *another* track. The virtual
+> CoreMIDI port stays because it's still the only way to record onto the
+> **same** track NoteCap sits on, and the only route that carries back-dated
+> timestamps. The rest of this plan records the original AU reasoning.
 
 ### Chosen approach: virtual CoreMIDI output
 
@@ -65,11 +72,11 @@ JUCE builds AU, VST3 and Standalone versions from one codebase, so keeping VST3 
 | Area | Choice | Why |
 |---|---|---|
 | Framework | **JUCE 8.0.14** (C++17), **Projucer + xcodebuild** (matching Juno106AU; no cmake/brew) | Standard for AU/VST3. Includes sidechain buses, `AudioPlayHead` transport info, and a UI toolkit. |
-| Formats | AUv2 (primary), VST3 and Standalone (dev/fallback) | AUv2 is what Live hosts. Standalone makes DSP debugging quicker. |
+| Formats | **VST3** and Standalone (dev) | AU removed 2026-10-21. Live 12 hosts VST3 with sidechain and MIDI-out routing. Standalone makes DSP debugging quicker. |
 | MIDI out | CoreMIDI `MIDISourceCreateWithProtocol` / `MIDIReceived` | Virtual port with host-time timestamps. |
 | DSP | Own implementation on Apple vDSP / Accelerate; the core has no JUCE dependency | Avoids GPL/AGPL licences (Chordino, Essentia). Fast and real-time safe. |
 | Tests | Plain clang test scripts (`Tests/run_tests.sh`, `run_integration.sh`), a synthetic-guitar benchmark, and the `Tools/eval` CLI (majmin scoring built in) | Chord accuracy is measured, not guessed. No extra dependencies. |
-| Validation | `auval`, `pluginval` (strictness 10) | Catches host-compatibility bugs early. |
+| Validation | `pluginval` (strictness 10) | Catches host-compatibility bugs early. |
 | Datasets | GuitarSet (CC BY 4.0, guitar with chord labels), plus our own recordings | Guitar is the most likely input source. |
 
 ---
@@ -256,7 +263,11 @@ notecap/
 | 3. Real-time integration | **Done** | Block-size independent. Mean decision latency is about 130 ms. |
 | 4. Quantizer + voicing | **Done** | Nearest / Next-line, swing, triplets, Hold / fixed lengths; close / open / bass + chord voicings. Integration-tested sample-accurately against a fake 120 BPM transport. |
 | 5. UI | **First version done** | Chord, pitch-class and status displays, plus all parameters. Snapshot: `Tests/snapshot_editor.cpp`. |
-| 6. Hardening | **Mostly done** | See the Phase 6 log below. `pluginval` passes at strictness 10. Remaining: Developer ID signing and notarization (needs certificates), and checks only possible in Live (plugin rescan, fresh-Mac install). |
+| 6. Hardening | **Mostly done**; AU removed 2026-10-21 (VST3 + Standalone only) | See the Phase 6 log below. `pluginval` passes at strictness 10. Remaining: Developer ID signing and notarization (needs certificates), and checks only possible in Live (plugin rescan, fresh-Mac install). |
+
+**2026-10-21:** AU support removed. The Projucer project builds VST3 and
+Standalone only, and the installer is VST3-only. The processor, engine and MIDI
+port code were already format-agnostic, so no plugin logic changed.
 
 **Next steps:** run the Phase 0 checklist in Live 12, then record 5–10 real takes
 (with `.lab` references) to measure accuracy on real guitar/keys and retune if

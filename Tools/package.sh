@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds dist/NoteCap-<version>.pkg: an installer with AU and VST3 choices that
-# installs to /Library/Audio/Plug-Ins.
+# Builds dist/NoteCap-<version>.pkg: an installer for the VST3 plugin that
+# installs to /Library/Audio/Plug-Ins/VST3.
 #
 #   Tools/package.sh              # build Release, then package
 #   Tools/package.sh --no-build   # package the existing Release build
@@ -25,35 +25,23 @@ if [[ "${1:-}" != "--no-build" ]]; then
                -configuration Release build | grep -E "error:|BUILD (SUCCEEDED|FAILED)" | sort -u
 fi
 
-for b in NoteCap.component NoteCap.vst3; do
-    [[ -d "$REL/$b" ]] || { echo "missing $REL/$b (build Release first)" >&2; exit 2; }
-done
+[[ -d "$REL/NoteCap.vst3" ]] || { echo "missing $REL/NoteCap.vst3 (build Release first)" >&2; exit 2; }
 
-rm -rf "$OUT/stage" "$OUT/pkgs"
-mkdir -p "$OUT/stage/au" "$OUT/stage/vst3" "$OUT/pkgs" "$OUT/scripts"
-ditto "$REL/NoteCap.component" "$OUT/stage/au/NoteCap.component"
+rm -rf "$OUT/stage" "$OUT/pkgs" "$OUT/scripts"
+mkdir -p "$OUT/stage/vst3" "$OUT/pkgs"
 ditto "$REL/NoteCap.vst3" "$OUT/stage/vst3/NoteCap.vst3"
 
-# ---- sign the plugin bundles ----
-for b in "$OUT/stage/au/NoteCap.component" "$OUT/stage/vst3/NoteCap.vst3"; do
-    if [[ -n "${DEVELOPER_ID_APP:-}" ]]; then
-        codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$b"
-    else
-        codesign --force --sign - "$b"
-    fi
-    codesign --verify --strict "$b"
-done
+# ---- sign the plugin bundle ----
+b="$OUT/stage/vst3/NoteCap.vst3"
+if [[ -n "${DEVELOPER_ID_APP:-}" ]]; then
+    codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$b"
+else
+    codesign --force --sign - "$b"
+fi
+codesign --verify --strict "$b"
 SIGNED_WITH="${DEVELOPER_ID_APP:-ad-hoc}"
 
-# Refresh the AU cache so Live sees the new version without a reboot.
-cat > "$OUT/scripts/postinstall" <<'EOF'
-#!/bin/sh
-killall -9 AudioComponentRegistrar 2>/dev/null || true
-exit 0
-EOF
-chmod +x "$OUT/scripts/postinstall"
-
-# ---- component packages ----
+# ---- component package ----
 # Bundles must not be "relocatable": otherwise Installer puts the update wherever
 # it finds an existing bundle with the same ID (e.g. a dev build in ~/Library).
 component_pkg () {
@@ -66,30 +54,24 @@ component_pkg () {
         plutil -replace "$i.BundleIsRelocatable" -bool NO "$plist"
     done
     pkgbuild --root "$OUT/stage/$kind" --component-plist "$plist" --install-location "$dest" \
-             --identifier "$ID_BASE.$kind" --version "$VERSION" --scripts "$OUT/scripts" \
+             --identifier "$ID_BASE.$kind" --version "$VERSION" \
              "$OUT/pkgs/NoteCap-$kind.pkg" >/dev/null
 }
-component_pkg au   "/Library/Audio/Plug-Ins/Components"
 component_pkg vst3 "/Library/Audio/Plug-Ins/VST3"
 
 cat > "$OUT/pkgs/distribution.xml" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
     <title>NoteCap $VERSION</title>
-    <options customize="allow" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
     <domains enable_localSystem="true"/>
     <volume-check><allowed-os-versions><os-version min="12.0"/></allowed-os-versions></volume-check>
     <choices-outline>
-        <line choice="au"/>
         <line choice="vst3"/>
     </choices-outline>
-    <choice id="au" title="Audio Unit (Ableton Live, Logic)" description="Installs NoteCap.component to /Library/Audio/Plug-Ins/Components.">
-        <pkg-ref id="$ID_BASE.au"/>
-    </choice>
-    <choice id="vst3" title="VST3" description="Installs NoteCap.vst3 to /Library/Audio/Plug-Ins/VST3.">
+    <choice id="vst3" title="NoteCap VST3" description="Installs NoteCap.vst3 to /Library/Audio/Plug-Ins/VST3.">
         <pkg-ref id="$ID_BASE.vst3"/>
     </choice>
-    <pkg-ref id="$ID_BASE.au" version="$VERSION">NoteCap-au.pkg</pkg-ref>
     <pkg-ref id="$ID_BASE.vst3" version="$VERSION">NoteCap-vst3.pkg</pkg-ref>
 </installer-gui-script>
 EOF

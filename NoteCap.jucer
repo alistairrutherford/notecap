@@ -3,10 +3,10 @@
 <JUCERPROJECT id="NtCapP" name="NoteCap" projectType="audioplug" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="0.1.0"
               companyName="Alistair Rutherford" bundleIdentifier="com.alistairrutherford.notecap"
-              pluginFormats="buildAU,buildVST3,buildStandalone" pluginCharacteristicsValue="pluginProducesMidiOut"
+              pluginFormats="buildVST3,buildStandalone" pluginCharacteristicsValue="pluginProducesMidiOut"
               pluginName="NoteCap" pluginDesc="Listens to audio, detects chords and sends them as quantized MIDI"
               pluginManufacturer="Alistair Rutherford" pluginManufacturerCode="ARut"
-              pluginCode="NtCp" pluginAUMainType="'aufx'" pluginVST3Category="Fx,Analyzer,Tools"
+              pluginCode="NtCp" pluginVST3Category="Fx,Analyzer,Tools"
               cppLanguageStandard="17">
   <MAINGROUP id="mainGp" name="NoteCap">
     <GROUP id="srcGp0" name="Source">

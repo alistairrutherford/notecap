@@ -1,9 +1,9 @@
 # NoteCap
 
-An Audio Unit for Ableton Live that listens to audio (a guitar, keys or a mic),
+A VST3 plugin for Ableton Live that listens to audio (a guitar, keys or a mic),
 recognises the chord being played, and sends it as **quantized MIDI** that a
-MIDI track can record. Built with JUCE. Also builds as VST3 and a Standalone
-app.
+MIDI track can record. Built with JUCE. Also builds as a Standalone app for
+testing.
 
 ![NoteCap plugin window: detected chord, pitch-class bars, status panel and the Detect / Quantize / Output controls](screenshot.png)
 
@@ -11,8 +11,9 @@ See [PLAN.md](PLAN.md) for the full project plan and design decisions.
 
 ## How it fits into Live
 
-Live can't route MIDI *out of* AU plugins. NoteCap therefore publishes its
-chords on its own **CoreMIDI virtual port** (`NoteCap Out 1`, `NoteCap Out 2`,
+Live can only take a plugin's MIDI output from a *different* track. So that
+NoteCap can sit on the same track that records its chords, it also publishes
+them on its own **CoreMIDI virtual port** (`NoteCap Out 1`, `NoteCap Out 2`,
 …). Live sees that port like any hardware MIDI input.
 
 ```
@@ -23,20 +24,24 @@ MIDI track "Chords"   [ Wavetable (or any instrument) ] → [ NoteCap ]
   MIDI From: NoteCap Out 1   (armed)
 ```
 
-1. **Preferences → Link, Tempo & MIDI:** once NoteCap has been loaded, turn on
+1. **Preferences → Plug-Ins:** turn on **Use VST3 Plug-In System Folders** and
+   rescan if NoteCap doesn't appear in the browser under Plug-Ins.
+2. **Preferences → Link, Tempo & MIDI:** once NoteCap has been loaded, turn on
    **Track** for the input port `NoteCap Out 1`.
-2. Create a MIDI track with any instrument, then add **NoteCap** *after* the
+3. Create a MIDI track with any instrument, then add **NoteCap** *after* the
    instrument. It's an audio effect and passes the synth's audio through.
-3. In NoteCap's device header, open the **Sidechain** section and pick the
+4. In NoteCap's device header, open the **Sidechain** section and pick the
    audio track you want to listen to.
-4. Set the MIDI track's **MIDI From** to `NoteCap Out 1` and arm it.
-5. Play. The detected chord appears in NoteCap and the instrument plays it on
+5. Set the MIDI track's **MIDI From** to `NoteCap Out 1` and arm it.
+6. Play. The detected chord appears in NoteCap and the instrument plays it on
    the grid. Press record to capture it.
-6. Recommended: set **Edit → Record Quantization** to the same grid as NoteCap.
+7. Recommended: set **Edit → Record Quantization** to the same grid as NoteCap.
 
-If Live's sidechain selector doesn't feed NoteCap, use the fallback: put
-NoteCap on the **audio track** itself, set *Source* to **Main input**, and keep
-the MIDI track's MIDI From on `NoteCap Out 1`.
+**Without the virtual port:** put NoteCap on the **audio track** itself (*Source*:
+**Main input**). On a separate MIDI track, set **MIDI From** to that audio track
+and then **NoteCap** in the second chooser. This uses Live's standard routing for
+[plug-in MIDI output](https://help.ableton.com/hc/en-us/articles/209070189-Accessing-the-MIDI-output-of-a-VST-plug-in).
+The port's back-dated timestamps don't apply on this route.
 
 ## Controls
 
@@ -98,15 +103,14 @@ Requires Xcode and a JUCE 8 checkout at `~/Development/JUCE` (no brew, no cmake)
 ~/Development/JUCE/extras/Projucer/Builds/MacOSX/build/Release/Projucer.app/Contents/MacOS/Projucer \
     --resave NoteCap.jucer
 
-# build AU + VST3 + Standalone (copies to ~/Library/Audio/Plug-Ins/)
+# build VST3 + Standalone (copies the VST3 to ~/Library/Audio/Plug-Ins/VST3)
 xcodebuild -project Builds/MacOSX/NoteCap.xcodeproj -target "NoteCap - All" -configuration Release build
 
-# validate the AU
-auval -v aufx NtCp ARut
+# validate with Tracktion's pluginval (https://github.com/Tracktion/pluginval)
+pluginval --strictness-level 10 --validate ~/Library/Audio/Plug-Ins/VST3/NoteCap.vst3
 ```
 
-If Live doesn't list it after a rescan, run `killall -9 AudioComponentRegistrar`
-and restart Live.
+If Live doesn't list it, rescan in Preferences → Plug-Ins.
 
 ## Installer
 
@@ -115,11 +119,10 @@ Tools/package.sh              # Release build -> dist/NoteCap-<version>.pkg
 Tools/package.sh --no-build   # package the existing Release build
 ```
 
-The installer offers AU and VST3 choices and installs to
-`/Library/Audio/Plug-Ins/…`. It also refreshes the AU cache. CI builds the same
-package on every push (the *NoteCap-installer* artifact).
+The installer puts `NoteCap.vst3` in `/Library/Audio/Plug-Ins/VST3`. CI builds
+the same package on every push (the *NoteCap-installer* artifact).
 
-Without extra setup the plugins are **ad-hoc signed**. That works on the Mac
+Without extra setup the plugin is **ad-hoc signed**. That works on the Mac
 that built them, but Gatekeeper blocks the package on other Macs. To
 distribute it, get **Developer ID Application** and **Developer ID Installer**
 certificates (Apple Developer Program), then:
@@ -133,9 +136,10 @@ NOTARY_PROFILE=notecap Tools/package.sh
 
 This signs with the hardened runtime, notarizes and staples the package.
 
-**Dev builds and the installer don't mix:** Xcode builds copy the plugins into
-`~/Library/Audio/Plug-Ins/`, and the installer puts them in `/Library/…`. With
-both present, Live may load either one. Remove one of the two.
+**Dev builds and the installer don't mix:** Xcode builds copy the plugin into
+`~/Library/Audio/Plug-Ins/VST3`, and the installer puts it in
+`/Library/Audio/Plug-Ins/VST3`. With both present, Live may load either one.
+Remove one of the two.
 
 ## Tests
 

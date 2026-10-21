@@ -1,8 +1,8 @@
 // A CoreMIDI virtual source owned by one plugin instance ("NoteCap Out <n>").
 //
-// Ableton Live can't route MIDI out of AU plugins, but it sees virtual CoreMIDI
-// sources like hardware ports, so a MIDI track can take this port as its input
-// and record it. The audio thread pushes time-stamped messages into a lock-free
+// Live only lets a track take a plugin's MIDI output from a *different* track,
+// but it sees virtual CoreMIDI sources like hardware ports, so the MIDI track
+// NoteCap sits on can take this port as its input and record it. The audio thread pushes time-stamped messages into a lock-free
 // FIFO; a sender thread hands them to CoreMIDI.
 #pragma once
 
