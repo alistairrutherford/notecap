@@ -88,6 +88,12 @@ def create_audio_track(index: int = -1, name: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+def duplicate_track(track: Key) -> dict:
+    """Duplicate a track with its devices (plug-in state is saved and loaded into the copy)."""
+    return _call("duplicate_track", track=track)
+
+
+@mcp.tool()
 def delete_track(track: Key) -> dict:
     """Delete a track."""
     return _call("delete_track", track=track)

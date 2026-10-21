@@ -8,6 +8,11 @@ set -eu
 SET="${1:-}"
 APP="${LIVE_APP:-$(ls -d /Applications/Ableton\ Live\ 12*.app 2>/dev/null | head -1)}"
 [ -n "$APP" ] || { echo "Live 12 not found in /Applications (set LIVE_APP)" >&2; exit 1; }
+# Check the set before quitting Live, so a wrong path can't close the running session for nothing.
+if [ -n "$SET" ] && [ ! -f "$SET" ]; then
+    echo "No set at $SET (Live saves inside a '<name> Project' folder); Live left running." >&2
+    exit 1
+fi
 
 if pgrep -x Live >/dev/null; then
     osascript -e 'quit app "Live"' || true

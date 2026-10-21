@@ -129,3 +129,80 @@ def by_beat(notes):
     for n in notes:
         out.setdefault(int(round(n["song_time"])), []).append(n)
     return out
+
+
+# -- the Chordism -> Drift chain (detection, sidechain and Record Quantization tests) ----------
+
+CHORDISM = "Chordism"
+# C major triads by scale degree, as pitch classes; Chordism's test pattern plays slot b mod 7 on beat b.
+TRIAD_NAMES = ["C", "Dm", "Em", "F", "G", "Am", "Bdim"]
+TRIAD_PCS = [{0, 4, 7}, {2, 5, 9}, {4, 7, 11}, {5, 9, 0}, {7, 11, 2}, {9, 0, 4}, {11, 2, 5}]
+
+
+def chordism_chain(live, tempo):
+    """Build (or reuse) the chain and return its track and device indices:
+
+        "NoteCap Chords"  (MIDI)  Chordism: C major triads, one per beat while its Test pattern is on
+        "NoteCap Synth"   (MIDI)  MIDI From: NoteCap Chords / Chordism, monitoring In
+                                  [ Drift ] -> [ NoteCap ]
+
+    Skips the test if Chordism isn't installed. Chordism has more than 64 parameters, so Live's
+    Options.txt needs -_PluginAutoPopulateThreshold=128.
+    """
+    if not live.call("browser_search", query=CHORDISM, category="plugins", format="vst3", limit=5):
+        pytest.skip("Chordism (VST3) is not installed")
+    prepare_song(live, tempo)
+    chords = track(live, "NoteCap Chords", "midi", [(CHORDISM, "plugins")])
+    synth = track(live, "NoteCap Synth", "midi", [(INSTRUMENT, "instruments"), (NOTECAP, "plugins")])
+    cd = device(live, chords, CHORDISM)
+    shown = {
+        "Enable": set_param(live, chords, cd, "Enable", True),
+        "Key": set_param(live, chords, cd, "Key", "C", choices=CHORDISM_CHOICES["Key"]),
+        "Scale": set_param(live, chords, cd, "Scale", "Major", choices=CHORDISM_CHOICES["Scale"]),
+        "Chord Group": set_param(live, chords, cd, "Chord Group", "Triads", choices=CHORDISM_CHOICES["Chord Group"]),
+        "Split": set_param(live, chords, cd, "Split", 60, (0, 127)),
+        "Chord Octave": set_param(live, chords, cd, "Chord Octave", 0, (-3, 3)),
+    }
+    set_param(live, chords, cd, "Mute CG", False)
+    set_param(live, chords, cd, "Mute SS", False)
+    route_from_plugin(live, synth, chords, CHORDISM)
+    live.call("set_track", track=synth, arm=False, monitoring="in")   # plays Chordism without being armed
+    return {"chords": chords, "chordism": cd, "synth": synth, "notecap": device(live, synth, NOTECAP),
+            "chordism_shown": shown}
+
+
+def chordism_pattern(live, chain, on):
+    set_param(live, chain["chords"], chain["chordism"], "Test pattern", bool(on))
+
+
+def detect_params(live, track_index, device_index, source="Main input", grid="Off", mode="Nearest"):
+    """NoteCap settings for detecting Chordism's triads (Bdim needs dim/aug on, no sevenths)."""
+    nc = NOTECAP_CHOICES
+    return {
+        "Source": set_param(live, track_index, device_index, "Source", source, choices=nc["Source"]),
+        "Grid": set_param(live, track_index, device_index, "Grid", grid, choices=nc["Grid"]),
+        "Quantize Mode": set_param(live, track_index, device_index, "Quantize Mode", mode, choices=nc["Quantize Mode"]),
+        "7th Chords": set_param(live, track_index, device_index, "7th Chords", False),
+        "Sus Chords": set_param(live, track_index, device_index, "Sus Chords", False),
+        "Dim/Aug Chords": set_param(live, track_index, device_index, "Dim/Aug Chords", True),
+        "Test Chords": set_param(live, track_index, device_index, "Test Chords", False),
+    }
+
+
+def score_triads(notes, beats, tempo):
+    """For each beat, the first chord NoteCap sent in it (its notes share a start time) against
+    Chordism's triad. Returns lines, the number right, and each beat's start offset in ms."""
+    lines, right, offsets = [], 0, []
+    for b in range(beats):
+        in_beat = [n for n in notes if b <= n["song_time"] < b + 1]
+        t0 = min((n["song_time"] for n in in_beat), default=None)
+        chord = {n["pitch"] % 12 for n in in_beat if t0 is not None and abs(n["song_time"] - t0) < 1e-6}
+        ok = chord == TRIAD_PCS[b % 7]
+        right += ok
+        ms = (t0 - b) * 60000.0 / tempo if t0 is not None else None
+        if ok and ms is not None:
+            offsets.append(ms)
+        lines.append("beat %2d  Chordism %-5s  NoteCap %-16s %10s  %s" % (
+            b, TRIAD_NAMES[b % 7], sorted(chord) if chord else "-", "%+.1f ms" % ms if ms is not None else "",
+            "ok" if ok else "WRONG"))
+    return {"lines": lines, "right": right, "offsets_ms": offsets}

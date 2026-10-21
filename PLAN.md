@@ -292,8 +292,23 @@ sidechain chooser stay manual. Offline bridge tests run in CI.
 - Live shows no value items for a VST3 plug-in's choice parameters, so the tests set a
   choice by its normalised index and check Live's display text (`tests/rig.py`).
 
-Phase 0 checklist status: routing + timing and detection confirmed in Live. Still by hand:
-the sidechain chooser, Record Quantization snapping late chords, and save/reopen.
+**Remaining Phase 0 checks automated and passing (2026-10-21, same Live):**
+- *Record Quantization* (`test_record_quantize_live.py`, Grid 1/4, Nearest): without it NoteCap's
+  chords start ~125 ms after the beat (14/14 right); with Record Quantization 1/4 they start
+  **0.000 ms** from it. The late-chord design works.
+- *Sidechain* (`test_sidechain_live.py`): NoteCap on a silent audio track, its sidechain fed from
+  the synth track: **14/14**, latency median 125 ms. The LOM can't route a device's sidechain
+  (`Device.audio_inputs` is empty for plug-ins and Live's Compressor; it seems to be Max for
+  Live only), so `livebridge/als.py` routes it in a copy of the saved set
+  (`SideChain/…/Target = AudioIn/Track.<id>/PostFxOut`). A first attempt failed because the set
+  had the sidechain switched on with no source; the saved file showed it.
+- *State*: 18/18 settings survive `duplicate_track` (new bridge command), and survive saving
+  and reopening the set together with the *MIDI From* route (two-stage test around one Cmd-S;
+  the LOM has no save).
+- `scripts/restart_live.sh` now checks the set exists before quitting Live (a wrong path once
+  quit Live and discarded an unsaved set).
+
+**Phase 0 is complete.** Left for later: accuracy on real recordings, Developer ID signing.
 
 **2026-10-21:** CoreMIDI virtual port removed (see §2). NoteCap's only output is the
 plugin's MIDI, recorded with VST3 *MIDI From*; *Source* defaults to Main input; a host

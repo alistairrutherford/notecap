@@ -22,6 +22,10 @@ pytest / MCP server / CLI  ──TCP 127.0.0.1:9872──▶  NoteCapBridge Remo
 | `tests/rig.py` | Shared set-up for the Live tests: tracks, parameters by name, MIDI From routing, recording. |
 | `tests/test_routing_live.py` | NoteCap's *Test chords* on an audio track, recorded on a MIDI track through *MIDI From*: C F G Am on every beat, each exactly on time. |
 | `tests/test_detection_live.py` | Detection end to end: Chordism's test pattern → Drift → NoteCap → recorded chords, compared beat by beat with what Chordism played, with NoteCap's detection latency. |
+| `tests/test_sidechain_live.py` | The same chords heard through NoteCap's **sidechain**: NoteCap on a silent audio track, its sidechain fed from the synth track (routed in the saved set with `livebridge/als.py`, since the LOM can't). |
+| `livebridge/als.py` | Edits a saved set where the LOM can't reach: routes a plug-in's sidechain in a copy of the `.als`. |
+| `tests/test_record_quantize_live.py` | NoteCap's late chords (Grid 1/4, Nearest) recorded with Live's **Record Quantization** off (they arrive ~125 ms late) and at 1/4 (exactly on the beat). |
+| `tests/test_state_live.py` | NoteCap's settings survive **duplicating the track** (automatic), and **saving and reopening the set** (two stages around one Cmd-S). |
 | `scripts/restart_live.sh` | Quits Live and reopens it with a set, then waits for the bridge. |
 
 ## Setup
@@ -58,6 +62,13 @@ uv run python -m livebridge get_state
 uv run pytest tests/test_offline.py            # no Live needed
 uv run pytest tests/test_routing_live.py       # Test chords through MIDI From, timing
 uv run pytest tests/test_detection_live.py     # Chordism -> Drift -> NoteCap -> recorded chords
+uv run pytest tests/test_sidechain_live.py     # the same, heard through NoteCap's sidechain
+uv run pytest tests/test_record_quantize_live.py   # late chords snapped by Record Quantization
+uv run pytest tests/test_state_live.py         # settings survive duplicate_track
+# Save and reopen (the LOM can't save a set): prepare, Cmd-S, reopen, verify
+NOTECAP_STATE=prepare uv run pytest tests/test_state_live.py -k reopen
+scripts/restart_live.sh "path/to/the set.als"
+NOTECAP_STATE=verify uv run pytest tests/test_state_live.py -k reopen
 ```
 
 The live tests build their tracks (`NoteCap Src`, `NoteCap Rec`, `NoteCap Chords`,
@@ -65,6 +76,24 @@ The live tests build their tracks (`NoteCap Src`, `NoteCap Rec`, `NoteCap Chords
 scratch set. They skip when the bridge doesn't answer. The report is printed at the end of the
 run (with or without `-s`). Each run is also saved as JSON in `reports/` (gitignored), with the
 whole clip. Settings are environment variables, listed at the top of each test file.
+
+## The whole Phase 0 run
+
+One Cmd-S is the only manual step (the LOM has no save):
+
+```sh
+uv run pytest tests/test_routing_live.py tests/test_detection_live.py \
+              tests/test_record_quantize_live.py tests/test_state_live.py -k "not reopen"
+NOTECAP_STATE=prepare uv run pytest tests/test_state_live.py -k reopen
+uv run pytest tests/test_sidechain_live.py --setup-only      # builds the sidechain tracks
+# in Live: File > Save Live Set As... (it goes in a "<name> Project" folder)
+uv run python -m livebridge.als "path/to/set.als" --track "NoteCap Side" --source "NoteCap Synth"
+scripts/restart_live.sh "path/to/set sidechain.als"
+NOTECAP_STATE=verify uv run pytest tests/test_state_live.py -k reopen
+uv run pytest tests/test_sidechain_live.py
+```
+
+`restart_live.sh` checks the set exists before it quits Live.
 
 ## Restarting Live (new plug-in builds)
 
@@ -77,14 +106,19 @@ LiveBridge/scripts/restart_live.sh "path/to/test set.als"
 
 ## Manual steps (not in the Live Object Model)
 
-- **Saving and reopening a set** (File → Save, then the restart script, or File → Open).
+- **Saving a set.** The LOM has no save command (Live's `_MxDCore/LomTypes` lists none), so the
+  reopen test needs one Cmd-S between its two stages. `duplicate_track` gives a fully automatic
+  state round trip through Live in the meantime.
+- **A device's Sidechain chooser.** The LOM doesn't reach it: `Device.audio_inputs` (Live's
+  `DeviceIO`) is empty for plug-ins, and for Live's own Compressor, in 12.4.6. It seems to cover
+  only Max for Live devices' extra buses. Live stores the choice in the set, though, so
+  `python -m livebridge.als` routes it in a copy of a saved set (`SideChain` → `Target
+  AudioIn/Track.<id>/PostFxOut`), and the test opens that copy.
 - **Audio buffer size and sample rate** (Settings → Audio). The reports read the current values
   from Live's log.
 - **Plug-in rescans**, and the **count-in** preference (count-in doesn't change the results: the
   recorder waits for song time).
 - **Plug-in windows.** The LOM can't open a plug-in editor or click in it.
-- **A device's Sidechain chooser.** The LOM doesn't reach it, so the tests use *Source: Main
-  input*.
 
 ## Socket protocol
 
@@ -122,6 +156,7 @@ index or a name. Names match exactly (ignoring case) first, then by a unique sub
 | `set_song_properties` | any of `current_song_time, loop, loop_start, loop_length, metronome, arrangement_overdub, record_mode, session_record, signature_numerator, signature_denominator, back_to_arranger, midi_recording_quantization` (`"none"` or a `RecordingQuantization` name) | the new values |
 | `create_midi_track` | `index=-1`, `name?` | the track |
 | `create_audio_track` | `index=-1`, `name?` | the track (added for NoteCap, an audio effect) |
+| `duplicate_track` | `track` | the copy (Live saves each plug-in's state and loads it into the copy) |
 | `delete_track` | `track` | `{deleted, track_count}` |
 | `get_track` | `track` | the track |
 | `set_track` | `track`, `name? arm? monitoring? ("in"/"auto"/"off") mute? solo?` | the track |

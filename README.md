@@ -67,24 +67,22 @@ has already passed, the chord is sent at once and arrives late. Live's
 **Record Quantization** snaps it back when it's less than half a grid step late.
 Coarse grids (1/4, 1/2, bar) usually catch the line; at 1/16 most chords are late.
 
-## Phase 0 checklist (verify in your Live 12)
+## Phase 0 checks (Live 12)
 
-Chordism's LiveBridge tests already measured the VST3 *MIDI From* route in Live
-12.4.6 as sample-accurate. These checks are specific to NoteCap:
+All automated with [LiveBridge](LiveBridge/README.md) and **passing in Live 12.4.6** (44.1 kHz,
+buffer 1024, 2026-10-21):
 
-- [ ] **Routing + timing (Test chords):** turn on *Test chords*, Grid 1/4, press
-      play and record 8 bars on the MIDI track. Chords should be C F G Am, each
-      exactly on its beat.
-- [ ] **Detection:** play into the audio track. The Status panel shows
-      `Input: main input` with a moving meter, and the chords you play are
-      recorded.
-- [ ] **Sidechain (optional):** with NoteCap on another track and *Source* set
-      to Sidechain, choose the guitar track in the Sidechain section. Status
-      should not say "sidechain not connected".
-- [ ] **Late chords:** Grid 1/4, Mode Nearest, Record Quantization on 1/4.
-      Strum on the beat and record: the chords land on the beat.
-- [ ] Save the set, close Live and reopen it: NoteCap's settings and the MIDI
-      track's *MIDI From* routing are restored.
+| Check | Result |
+|---|---|
+| Routing + timing (*Test chords* via *MIDI From*) | right chord on every beat, every note **0.000 ms** off |
+| Detection (Chordism → Drift → NoteCap) | **14/14** chords, latency median 125 ms |
+| Sidechain (NoteCap on a silent track, fed from the synth) | **14/14** chords |
+| Late chords + Record Quantization 1/4 | ~125 ms late without it, **exactly on the beat** with it |
+| Settings survive duplicating the track | 18/18 settings match |
+| Settings and routing survive save and reopen | 18/18 settings, *MIDI From* intact |
+
+The only manual step is one save (Live's scripting API can't save a set). See
+[LiveBridge/README.md](LiveBridge/README.md#the-whole-phase-0-run).
 
 ## Building
 

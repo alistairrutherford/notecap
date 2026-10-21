@@ -73,6 +73,10 @@ class Song(Obj):
     def create_midi_track(self, index):
         self.tracks.insert(len(self.tracks) if index < 0 else index, Track("MIDI"))
 
+    def duplicate_track(self, index):
+        src = self.tracks[index]
+        self.tracks.insert(index + 1, Track(src.name, list(src.devices), has_midi_input=src.has_midi_input))
+
     def create_audio_track(self, index):
         self.tracks.insert(len(self.tracks) if index < 0 else index, Track("Audio", has_midi_input=False))
 
@@ -236,6 +240,15 @@ def test_recording_and_clip_notes():
     assert w.cmds.dispatch("clear_arrangement_clips", {"track": 1})["deleted"] == 2
 
 
+def test_duplicate_track():
+    w = make_world()
+    t = w.cmds.dispatch("duplicate_track", {"track": "NoteCap Src"})
+    assert t["index"] == 1 and len(w.song.tracks) == 3
+    assert w.song.tracks[1].devices[0] is w.plugin
+    with pytest.raises(bridge_commands.CommandError):
+        w.cmds.dispatch("duplicate_track", {"track": "master"})
+
+
 # -- timing math -------------------------------------------------------------
 
 def test_note_offsets_early_and_late():
@@ -284,3 +297,46 @@ def test_offsets_in_samples_and_buffers():
     assert s["mean_remainder_samples"] == pytest.approx(68.0, abs=0.1)
     text = timing.format_table("t", rows, s, 120.0, {"sample_rate": 44100, "output_buffer": 128})
     assert "44100 Hz, buffer 128" in text and "1 buffer(s) + 68.0 samples" in text
+
+
+# -- editing a saved set (livebridge.als) ----------------------------------------
+
+SET_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<Ableton><LiveSet><Tracks>
+<MidiTrack Id="18"><Name><EffectiveName Value="NoteCap Synth" /></Name></MidiTrack>
+<AudioTrack Id="19"><Name><EffectiveName Value="NoteCap Side" /></Name><DeviceChain>
+<PluginDevice Id="0"><PluginDesc><Vst3PluginInfo Id="0"><Name Value="NoteCap" /></Vst3PluginInfo></PluginDesc>
+<SideChain>
+  <OnOff>
+    <LomId Value="0" />
+    <Manual Value="false" />
+  </OnOff>
+  <RoutedInput><Routable>
+    <Target Value="AudioIn/None" />
+    <UpperDisplayString Value="No Output" />
+    <LowerDisplayString Value="" />
+  </Routable></RoutedInput>
+</SideChain>
+</PluginDevice></DeviceChain></AudioTrack>
+</Tracks></LiveSet></Ableton>
+"""
+
+
+def test_als_set_sidechain(tmp_path):
+    from livebridge import als
+    assert [t[2] for t in als.tracks(SET_XML)] == ["NoteCap Synth", "NoteCap Side"]
+    out = als.set_sidechain(SET_XML, "NoteCap Side", "NoteCap Synth")
+    assert 'Target Value="AudioIn/Track.18/PostFxOut"' in out
+    assert 'UpperDisplayString Value="NoteCap Synth"' in out and 'LowerDisplayString Value="Post FX"' in out
+    assert '<Manual Value="true" />' in out
+    with pytest.raises(ValueError, match="no track named"):
+        als.set_sidechain(SET_XML, "Nope", "NoteCap Synth")
+    with pytest.raises(ValueError, match="no plug-in"):
+        als.set_sidechain(SET_XML, "NoteCap Side", "NoteCap Synth", device="Chordism")
+
+    src = tmp_path / "t.als"
+    als.write(str(src), SET_XML)
+    assert als.main([str(src), "--track", "NoteCap Side", "--source", "NoteCap Synth"]) == 0
+    assert "PostFxOut" in als.read(str(tmp_path / "t sidechain.als"))
+    with pytest.raises(SystemExit):
+        als.main([str(src), "--track", "NoteCap Side", "--source", "NoteCap Synth", "-o", str(src)])

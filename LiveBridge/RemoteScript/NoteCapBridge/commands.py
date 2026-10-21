@@ -268,6 +268,16 @@ class Commands:
         # NoteCap is an audio effect: it sits on the audio track it listens to.
         return self._create_track(self._song().create_audio_track, index, name)
 
+    def cmd_duplicate_track(self, track):
+        """Duplicate a track with its devices. Live saves each plug-in's state and loads it into the
+        copy, so this is a state round trip without saving the set."""
+        t = self._track(track)
+        i = self._track_index(t)
+        if not isinstance(i, int):
+            raise CommandError("cannot duplicate the master track")
+        self._song().duplicate_track(i)
+        return self._track_info(self._song().tracks[i + 1], i + 1)
+
     def cmd_delete_track(self, track):
         t = self._track(track)
         i = self._track_index(t)
