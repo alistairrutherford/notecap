@@ -17,7 +17,7 @@ import os
 import pytest
 
 from livebridge import livelog, timing
-from rig import CLOSE, INSTRUMENT, NOTECAP, by_beat, device, prepare_song, record, route_from_plugin, \
+from rig import CLOSE, INSTRUMENT, NOTECAP, NOTECAP_CHOICES as NC, by_beat, device, prepare_song, record, route_from_plugin, \
     save_report, set_param, track
 
 BARS = int(os.environ.get("NOTECAP_BARS", "4"))
@@ -34,9 +34,9 @@ def rig(live):
     rec = track(live, "NoteCap Rec", "midi", [(INSTRUMENT, "instruments")])
     dev = device(live, src, NOTECAP)
     shown = {
-        "Grid": set_param(live, src, dev, "Grid", "1/4"),
-        "Length": set_param(live, src, dev, "Length", "Hold"),
-        "Voicing": set_param(live, src, dev, "Voicing", "Close"),
+        "Grid": set_param(live, src, dev, "Grid", "1/4", choices=NC["Grid"]),
+        "Length": set_param(live, src, dev, "Length", "Hold", choices=NC["Length"]),
+        "Voicing": set_param(live, src, dev, "Voicing", "Close", choices=NC["Voicing"]),
         "Octave": set_param(live, src, dev, "Octave", 3, (1, 5)),
         "MIDI Channel": set_param(live, src, dev, "MIDI Channel", 1, (1, 16)),
         "Test Chords": set_param(live, src, dev, "Test Chords", True),

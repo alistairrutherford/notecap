@@ -280,7 +280,20 @@ notecap/
 `test_routing_live.py` (Test chords through VST3 *MIDI From*: right chord on every beat, 0.000
 ms) and `test_detection_live.py` (Chordism's test pattern → Drift → NoteCap → recorded chords,
 with detection latency). They automate most of the Phase 0 checklist; save/reopen and the
-sidechain chooser stay manual. Offline bridge tests run in CI. Not yet run against Live.
+sidechain chooser stay manual. Offline bridge tests run in CI.
+
+**First run in Live (2026-10-21, Live 12.4.6, 44.1 kHz, buffer 1024): both pass.**
+- *Routing* (`test_routing_live.py`, 120 BPM, 4 bars): 48 notes on 16 beats, C F G Am in
+  order, every note **0.000 ms / 0 samples** from its beat, each held one beat. VST3 *MIDI
+  From* is sample-accurate for NoteCap, as it was for Chordism.
+- *Detection* (`test_detection_live.py`, 60 BPM): Chordism's C major triads through Drift,
+  heard by NoteCap on the same track: **14 of 14 beats right** (C Dm Em F G Am Bdim twice),
+  detection latency **median 124 ms, max 131 ms** (the offline benchmark says ~130 ms).
+- Live shows no value items for a VST3 plug-in's choice parameters, so the tests set a
+  choice by its normalised index and check Live's display text (`tests/rig.py`).
+
+Phase 0 checklist status: routing + timing and detection confirmed in Live. Still by hand:
+the sidechain chooser, Record Quantization snapping late chords, and save/reopen.
 
 **2026-10-21:** CoreMIDI virtual port removed (see §2). NoteCap's only output is the
 plugin's MIDI, recorded with VST3 *MIDI From*; *Source* defaults to Main input; a host

@@ -23,7 +23,7 @@ import statistics
 import pytest
 
 from livebridge import livelog
-from rig import INSTRUMENT, NOTECAP, device, prepare_song, record, route_from_plugin, save_report, \
+from rig import CHORDISM_CHOICES as CC, INSTRUMENT, NOTECAP, NOTECAP_CHOICES as NC, device, prepare_song, record, route_from_plugin, save_report, \
     set_param, track
 
 TEMPO = float(os.environ.get("NOTECAP_DETECT_TEMPO", "60"))
@@ -51,9 +51,9 @@ def rig(live):
     cd = device(live, chords, CHORDISM)
     shown = {"Chordism": {
         "Enable": set_param(live, chords, cd, "Enable", True),
-        "Key": set_param(live, chords, cd, "Key", "C"),
-        "Scale": set_param(live, chords, cd, "Scale", "Major"),
-        "Chord Group": set_param(live, chords, cd, "Chord Group", "Triads"),
+        "Key": set_param(live, chords, cd, "Key", "C", choices=CC["Key"]),
+        "Scale": set_param(live, chords, cd, "Scale", "Major", choices=CC["Scale"]),
+        "Chord Group": set_param(live, chords, cd, "Chord Group", "Triads", choices=CC["Chord Group"]),
         "Split": set_param(live, chords, cd, "Split", 60, (0, 127)),
         "Chord Octave": set_param(live, chords, cd, "Chord Octave", 0, (-3, 3)),
     }}
@@ -62,8 +62,8 @@ def rig(live):
 
     nd = device(live, synth, NOTECAP)
     shown["NoteCap"] = {
-        "Source": set_param(live, synth, nd, "Source", "Main input"),
-        "Grid": set_param(live, synth, nd, "Grid", "Off"),
+        "Source": set_param(live, synth, nd, "Source", "Main input", choices=NC["Source"]),
+        "Grid": set_param(live, synth, nd, "Grid", "Off", choices=NC["Grid"]),
         "7th Chords": set_param(live, synth, nd, "7th Chords", False),
         "Sus Chords": set_param(live, synth, nd, "Sus Chords", False),
         "Dim/Aug Chords": set_param(live, synth, nd, "Dim/Aug Chords", True),
