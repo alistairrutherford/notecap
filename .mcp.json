@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "live-bridge": {
+      "command": "uv",
+      "args": ["run", "--directory", "LiveBridge", "python", "-m", "livebridge.mcp_server"]
+    }
+  }
+}

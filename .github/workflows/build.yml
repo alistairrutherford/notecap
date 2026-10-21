@@ -56,6 +56,12 @@ jobs:
       - name: Build offline evaluator
         run: repo/Tools/eval/build.sh
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: LiveBridge offline tests (protocol, commands, timing math)
+        run: cd repo/LiveBridge && uv run pytest tests/test_offline.py -q
+
       - name: Package installer (ad-hoc signed)
         run: repo/Tools/package.sh --no-build
 

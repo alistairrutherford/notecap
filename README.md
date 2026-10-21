@@ -153,6 +153,22 @@ The engine benchmark renders 300 synthetic strummed-guitar chords at 44.1, 48
 and 96 kHz, with random tuning and strum speeds. Current result: **98.7%
 majmin** / 92% exact-label accuracy, about 130 ms mean decision latency.
 
+## Testing in Live (LiveBridge)
+
+`LiveBridge/` drives a running Live 12 through a Remote Script (**NoteCapBridge**, port 9872).
+It builds tracks, loads NoteCap, sets its parameters, routes *MIDI From*, records, and reads
+the recorded notes back with their exact timing. It's also an MCP server (`.mcp.json`), so
+Claude can drive Live directly. It comes from Chordism's LiveBridge.
+
+```sh
+cd LiveBridge && uv sync && ./install_remote_script.sh
+# restart Live; Settings → Link, Tempo & MIDI → Control Surface: NoteCapBridge
+uv run pytest tests/test_routing_live.py     # Test chords via MIDI From: right chords, 0.000 ms
+uv run pytest tests/test_detection_live.py   # Chordism → Drift → NoteCap: detection + latency
+```
+
+See [LiveBridge/README.md](LiveBridge/README.md) for the commands and the protocol.
+
 ## Evaluating on your own recordings
 
 ```sh
@@ -172,4 +188,5 @@ Source/core/     pure C++ DSP (no JUCE): chroma (NNLS), onset, classifier, engin
 Source/          PluginProcessor (scheduling, transport), PluginEditor (UI)
 Tests/           unit tests, engine benchmark, integration test, editor snapshot
 Tools/eval/      offline evaluator for WAV + .lab
+LiveBridge/      Live-in-the-loop tests and MCP server (Remote Script + Python client)
 ```

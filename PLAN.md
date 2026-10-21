@@ -275,6 +275,13 @@ notecap/
 | 5. UI | **First version done** | Chord, pitch-class and status displays, plus all parameters. Snapshot: `Tests/snapshot_editor.cpp`. |
 | 6. Hardening | **Mostly done**; AU removed 2026-10-21 (VST3 + Standalone only) | See the Phase 6 log below. `pluginval` passes at strictness 10. Remaining: Developer ID signing and notarization (needs certificates), and checks only possible in Live (plugin rescan, fresh-Mac install). |
 
+**2026-10-21:** LiveBridge added (`LiveBridge/`, from Chordism): a Live Remote Script
+(NoteCapBridge, port 9872) with a Python client, an MCP server and pytest tests. Live tests:
+`test_routing_live.py` (Test chords through VST3 *MIDI From*: right chord on every beat, 0.000
+ms) and `test_detection_live.py` (Chordism's test pattern → Drift → NoteCap → recorded chords,
+with detection latency). They automate most of the Phase 0 checklist; save/reopen and the
+sidechain chooser stay manual. Offline bridge tests run in CI. Not yet run against Live.
+
 **2026-10-21:** CoreMIDI virtual port removed (see §2). NoteCap's only output is the
 plugin's MIDI, recorded with VST3 *MIDI From*; *Source* defaults to Main input; a host
 `reset()` / `releaseResources()` now ends held notes on the next block. Integration tests

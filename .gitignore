@@ -23,3 +23,9 @@ Tools/eval/build/
 
 # Installer output
 dist/
+
+# LiveBridge (Python)
+LiveBridge/.venv/
+LiveBridge/reports/
+__pycache__/
+.pytest_cache/
