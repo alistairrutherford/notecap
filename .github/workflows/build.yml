@@ -50,7 +50,7 @@ jobs:
       - name: Run unit tests and engine benchmark
         run: repo/Tests/run_tests.sh
 
-      - name: Run integration test (processor + CoreMIDI virtual port)
+      - name: Run integration test (processor + MIDI output)
         run: JUCE_DIR="$GITHUB_WORKSPACE/JUCE" repo/Tests/run_integration.sh
 
       - name: Build offline evaluator

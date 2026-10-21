@@ -99,7 +99,7 @@ static void testQuantizer()
 
     // Onset just before the beat but detected after it: fire now, stamped on the beat.
     d = quantize (3.9, 4.2, QuantizeMode::Nearest, g);
-    check (d.late && std::abs (d.fireAtPpq - 4.2) < 1e-9 && std::abs (d.stampPpq - 4.0) < 1e-9,
+    check (d.late && std::abs (d.fireAtPpq - 4.2) < 1e-9 && std::abs (d.gridPpq - 4.0) < 1e-9,
            "nearest: late detection fires now, stamped at the beat");
 
     d = quantize (3.9, 4.2, QuantizeMode::Next, g);

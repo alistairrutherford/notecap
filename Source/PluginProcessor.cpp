@@ -17,7 +17,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoteCapAudioProcessor::creat
     auto ms  = AudioParameterFloatAttributes().withLabel ("ms");
 
     // Detection
-    ps.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "source", 1 }, "Source", StringArray { "Sidechain", "Main input" }, 0));
+    ps.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "source", 1 }, "Source", StringArray { "Sidechain", "Main input" }, 1));
     ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "gate", 1 }, "Gate", NormalisableRange<float> (-80.0f, -20.0f, 0.5f), -50.0f,
                                                          AudioParameterFloatAttributes().withLabel ("dB")));
     ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "sensitivity", 1 }, "Sensitivity", NormalisableRange<float> (0.0f, 100.0f, 1.0f), 50.0f, pct));
@@ -39,8 +39,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoteCapAudioProcessor::creat
     ps.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "velMode", 1 }, "Velocity Mode", StringArray { "From input", "Fixed" }, 0));
     ps.push_back (std::make_unique<AudioParameterInt> (ParameterID { "velocity", 1 }, "Velocity", 1, 127, 100));
     ps.push_back (std::make_unique<AudioParameterInt> (ParameterID { "channel", 1 }, "MIDI Channel", 1, 16, 1));
-    ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "offsetMs", 1 }, "Port Offset", NormalisableRange<float> (-150.0f, 150.0f, 1.0f), 0.0f, ms));
-    ps.push_back (std::make_unique<AudioParameterBool> (ParameterID { "virtualPort", 1 }, "Virtual MIDI Port", true));
     ps.push_back (std::make_unique<AudioParameterBool> (ParameterID { "testMode", 1 }, "Test Chords", false));
 
     return { ps.begin(), ps.end() };
@@ -58,38 +56,12 @@ NoteCapAudioProcessor::NoteCapAudioProcessor()
     pRetrigger = get ("retrigger"); pSevenths = get ("sevenths"); pSuspended = get ("suspended"); pDimAug = get ("dimAug");
     pGrid = get ("grid"); pQMode = get ("qmode"); pSwing = get ("swing"); pLength = get ("length");
     pVoicing = get ("voicing"); pOctave = get ("octave"); pVelMode = get ("velMode"); pVelocity = get ("velocity");
-    pChannel = get ("channel"); pOffsetMs = get ("offsetMs"); pVirtualPort = get ("virtualPort"); pTestMode = get ("testMode");
+    pChannel = get ("channel"); pTestMode = get ("testMode");
 
     engine.prepare (sampleRate);
-    syncPortWithParameter();
-    startTimerHz (4);
 }
 
-NoteCapAudioProcessor::~NoteCapAudioProcessor()
-{
-    stopTimer();
-    allNotesOff (nullptr, 0, VirtualMidiOut::nowNs());
-    midiOut.close();
-}
-
-//==============================================================================
-void NoteCapAudioProcessor::timerCallback()
-{
-    syncPortWithParameter();
-}
-
-void NoteCapAudioProcessor::syncPortWithParameter()
-{
-    const juce::ScopedLock sl (portLock);
-    const bool want = pVirtualPort->load() > 0.5f;
-    if (want && ! midiOut.isOpen())
-        midiOut.open (savedPortIndex);
-    else if (! want && midiOut.isOpen())
-    {
-        savedPortIndex = midiOut.getIndex();
-        midiOut.close();
-    }
-}
+NoteCapAudioProcessor::~NoteCapAudioProcessor() = default;
 
 void NoteCapAudioProcessor::updateEngineParams()
 {
@@ -121,7 +93,7 @@ double NoteCapAudioProcessor::stepPpq() const
 //==============================================================================
 void NoteCapAudioProcessor::prepareToPlay (double sr, int samplesPerBlock)
 {
-    allNotesOff (nullptr, 0, VirtualMidiOut::nowNs());
+    if (sounding.count > 0) flushRequested = true;
     sampleRate = sr;
     engine.prepare (sr);
     updateEngineParams();
@@ -133,8 +105,14 @@ void NoteCapAudioProcessor::prepareToPlay (double sr, int samplesPerBlock)
 
 void NoteCapAudioProcessor::releaseResources()
 {
-    numPending = 0;
-    allNotesOff (nullptr, 0, VirtualMidiOut::nowNs());
+    flushRequested = true;
+}
+
+void NoteCapAudioProcessor::reset()
+{
+    // JUCE's VST3 wrapper calls this from setProcessing (false), e.g. when Live
+    // switches the device off. There's no MIDI buffer here, so defer the note-offs.
+    flushRequested = true;
 }
 
 bool NoteCapAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -159,7 +137,7 @@ void NoteCapAudioProcessor::processBlockBypassed (juce::AudioBuffer<float>&, juc
     if (! bypassFlushed)
     {
         numPending = 0;
-        allNotesOff (&midi, 0, VirtualMidiOut::nowNs());
+        allNotesOff (midi, 0);
         bypassFlushed = true;
     }
 }
@@ -172,7 +150,6 @@ void NoteCapAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     bypassFlushed = false;
 
     Transport t;
-    t.hostNs = VirtualMidiOut::nowNs();
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
         {
@@ -180,16 +157,16 @@ void NoteCapAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             if (auto b = pos->getBpm(); b && std::isfinite (*b)) t.bpm = juce::jlimit (20.0, 999.0, *b);
             if (auto p = pos->getPpqPosition(); p && std::isfinite (*p)) t.ppq = *p;
             else t.playing = false;   // no usable song position: don't quantise
-            if (auto h = pos->getHostTimeNs()) t.hostNs = (int64_t) *h;
         }
 
     updateEngineParams();
 
     // Stopping the transport ends any recording: release held chords, drop plans.
-    if (wasPlaying && ! t.playing)
+    // So does a host reset/release since the last block.
+    if ((wasPlaying && ! t.playing) || flushRequested.exchange (false))
     {
         numPending = 0;
-        allNotesOff (&midi, 0, t.hostNs);
+        allNotesOff (midi, 0);
         lastTestLinePpq = -1.0e9;
     }
     wasPlaying = t.playing;
@@ -266,11 +243,11 @@ void NoteCapAudioProcessor::handleChordEvent (const ChordEvent& e, const Transpo
 
     if (e.correction)
     {
-        // Already sent: replace it now, stamped where the original belonged.
+        // Already sent: change it now.
         if (lastFiredSegment == e.segment && ! lastFiredChord.sameHarmony (e.chord))
         {
             Pending p;
-            p.segment = e.segment; p.fireAt = e.detectSample; p.stampAt = lastFiredStamp;
+            p.segment = e.segment; p.fireAt = e.detectSample; p.gridAt = lastFiredGridAt;
             p.chord = e.chord; p.late = true; p.replacement = true;
             p.velocity = lastFiredVelocity;
             addPending (p);
@@ -292,14 +269,11 @@ void NoteCapAudioProcessor::handleChordEvent (const ChordEvent& e, const Transpo
         const auto mode = pQMode->load() < 0.5f ? QuantizeMode::Nearest : QuantizeMode::Next;
         const auto d = quantize (toPpq (e.onsetSample), toPpq (e.detectSample), mode, grid);
         p.fireAt = std::max (toSample (d.fireAtPpq), e.detectSample);
-        p.stampAt = std::min (toSample (d.stampPpq), p.fireAt);
+        p.gridAt = std::min (toSample (d.gridPpq), p.fireAt);
         p.late = d.late;
     }
     else
-    {
-        p.fireAt = e.detectSample;
-        p.stampAt = e.onsetSample;   // the port can place it where it was played
-    }
+        p.fireAt = p.gridAt = e.detectSample;
 
     if (pVelMode->load() < 0.5f)
     {
@@ -347,7 +321,7 @@ void NoteCapAudioProcessor::scheduleTestChords (const Transport& t, int64_t bloc
 
         Pending p;
         p.segment = ++testSegment;
-        p.fireAt = p.stampAt = at;
+        p.fireAt = p.gridAt = at;
         p.chord = cycle[idx];
         p.velocity = (uint8_t) juce::jlimit (1, 127, (int) pVelocity->load());
         addPending (p);
@@ -375,22 +349,15 @@ void NoteCapAudioProcessor::firePending (juce::MidiBuffer& midi, const Transport
     }
 }
 
-int64_t NoteCapAudioProcessor::stampToNs (int64_t stampSample, int64_t blockStart, const Transport& t) const
-{
-    return t.hostNs + (int64_t) ((double) (stampSample - blockStart) * 1.0e9 / sampleRate)
-           + (int64_t) (pOffsetMs->load() * 1.0e6);
-}
-
 void NoteCapAudioProcessor::fire (const Pending& p, juce::MidiBuffer& midi, const Transport& t,
                                   int64_t blockStart, int numSamples)
 {
     const int offset = (int) juce::jlimit ((int64_t) 0, (int64_t) numSamples - 1, p.fireAt - blockStart);
-    const int64_t stampNs = stampToNs (p.stampAt, blockStart, t);
 
     if (p.releaseOnly)
     {
         if (soundingSegment == p.segment)
-            allNotesOff (&midi, offset, stampNs);
+            allNotesOff (midi, offset);
         return;
     }
 
@@ -408,25 +375,25 @@ void NoteCapAudioProcessor::fire (const Pending& p, juce::MidiBuffer& midi, cons
         // tones held and only change the notes that differ.
         for (int note : sounding)
             if (! contains (voicing, note))
-                sendMessage (juce::MidiMessage::noteOff (soundingChannel, note), &midi, offset, stampNs);
+                midi.addEvent (juce::MidiMessage::noteOff (soundingChannel, note), offset);
         for (int note : voicing)
             if (! contains (sounding, note))
-                sendMessage (juce::MidiMessage::noteOn (channel, note, p.velocity), &midi, offset, stampNs);
+                midi.addEvent (juce::MidiMessage::noteOn (channel, note, p.velocity), offset);
     }
     else
     {
-        allNotesOff (&midi, offset, stampNs);
+        allNotesOff (midi, offset);
         if (p.chord.isNone())
             return;
         for (int note : voicing)
-            sendMessage (juce::MidiMessage::noteOn (channel, note, p.velocity), &midi, offset, stampNs);
+            midi.addEvent (juce::MidiMessage::noteOn (channel, note, p.velocity), offset);
     }
 
     sounding = voicing;
     soundingChannel = channel;
     soundingSegment = p.segment;
     lastFiredSegment = p.segment;
-    lastFiredStamp = p.stampAt;
+    lastFiredGridAt = p.gridAt;
     lastFiredChord = p.chord;
     lastFiredVelocity = p.velocity;
     if (! p.replacement)
@@ -439,33 +406,24 @@ void NoteCapAudioProcessor::fire (const Pending& p, juce::MidiBuffer& midi, cons
         Pending off;
         off.segment = p.segment;
         off.releaseOnly = true;
-        off.fireAt = std::max (p.fireAt + 1, p.stampAt + (int64_t) std::llround (lengthSteps[lenIdx] * stepPpq() * spp));
-        off.stampAt = off.fireAt;
+        off.fireAt = std::max (p.fireAt + 1, p.gridAt + (int64_t) std::llround (lengthSteps[lenIdx] * stepPpq() * spp));
+        off.gridAt = off.fireAt;
         addPending (off);
     }
 }
 
-void NoteCapAudioProcessor::allNotesOff (juce::MidiBuffer* midi, int sampleOffset, int64_t stampNs)
+void NoteCapAudioProcessor::allNotesOff (juce::MidiBuffer& midi, int sampleOffset)
 {
     for (int note : sounding)
-        sendMessage (juce::MidiMessage::noteOff (soundingChannel, note), midi, sampleOffset, stampNs);
+        midi.addEvent (juce::MidiMessage::noteOff (soundingChannel, note), sampleOffset);
     sounding.count = 0;
     soundingSegment = 0;
-}
-
-void NoteCapAudioProcessor::sendMessage (const juce::MidiMessage& m, juce::MidiBuffer* midi, int sampleOffset, int64_t stampNs)
-{
-    if (midi != nullptr)
-        midi->addEvent (m, sampleOffset);
-    midiOut.push (m.getRawData(), m.getRawDataSize(), stampNs);
 }
 
 //==============================================================================
 void NoteCapAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    auto state = apvts.copyState();
-    state.setProperty ("portIndex", midiOut.isOpen() ? midiOut.getIndex() : savedPortIndex, nullptr);
-    if (auto xml = state.createXml())
+    if (auto xml = apvts.copyState().createXml())
         copyXmlToBinary (*xml, destData);
 }
 
@@ -473,19 +431,7 @@ void NoteCapAudioProcessor::setStateInformation (const void* data, int sizeInByt
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
-        {
-            auto state = juce::ValueTree::fromXml (*xml);
-            savedPortIndex = state.getProperty ("portIndex", 0);
-            state.removeProperty ("portIndex", nullptr);
-            apvts.replaceState (state);
-
-            // Reclaim the port name this instance had when the set was saved,
-            // so Live's track routing ("MIDI From: NoteCap Out 2") still matches.
-            const juce::ScopedLock sl (portLock);
-            if (midiOut.isOpen() && savedPortIndex > 0 && midiOut.getIndex() != savedPortIndex)
-                midiOut.open (savedPortIndex);
-            syncPortWithParameter();
-        }
+            apvts.replaceState (juce::ValueTree::fromXml (*xml));
 }
 
 juce::AudioProcessorEditor* NoteCapAudioProcessor::createEditor()

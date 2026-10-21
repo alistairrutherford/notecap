@@ -11,43 +11,41 @@ See [PLAN.md](PLAN.md) for the full project plan and design decisions.
 
 ## How it fits into Live
 
-Live can only take a plugin's MIDI output from a *different* track. So that
-NoteCap can sit on the same track that records its chords, it also publishes
-them on its own **CoreMIDI virtual port** (`NoteCap Out 1`, `NoteCap Out 2`,
-…). Live sees that port like any hardware MIDI input.
+NoteCap sits on the track you're playing into and sends its chords out as the
+plugin's MIDI output. A MIDI track records them with Live's standard
+[plug-in MIDI output routing](https://help.ableton.com/hc/en-us/articles/209070189-Accessing-the-MIDI-output-of-a-VST-plug-in).
+In Live 12 that route is sample-accurate.
 
 ```
-Audio track "Guitar"  (input: your interface / mic, Monitor: In or Auto)
-        │ sidechain
+Audio track "Guitar"   input: your interface / mic, Monitor: In or Auto
+  [ NoteCap ]          Source: Main input (audio passes through unchanged)
+        │ plug-in MIDI output
         ▼
-MIDI track "Chords"   [ Wavetable (or any instrument) ] → [ NoteCap ]
-  MIDI From: NoteCap Out 1   (armed)
+MIDI track "Chords"    MIDI From: Guitar → NoteCap   (armed)
+  [ Wavetable (or any instrument) ]
 ```
 
-1. **Preferences → Plug-Ins:** turn on **Use VST3 Plug-In System Folders** and
-   rescan if NoteCap doesn't appear in the browser under Plug-Ins.
-2. **Preferences → Link, Tempo & MIDI:** once NoteCap has been loaded, turn on
-   **Track** for the input port `NoteCap Out 1`.
-3. Create a MIDI track with any instrument, then add **NoteCap** *after* the
-   instrument. It's an audio effect and passes the synth's audio through.
-4. In NoteCap's device header, open the **Sidechain** section and pick the
-   audio track you want to listen to.
-5. Set the MIDI track's **MIDI From** to `NoteCap Out 1` and arm it.
-6. Play. The detected chord appears in NoteCap and the instrument plays it on
+1. **Settings → Plug-Ins:** turn on **Use VST3 Plug-In System Folders**. Rescan
+   if NoteCap doesn't appear in the browser under Plug-Ins.
+2. Put **NoteCap** on the audio track you play into, with *Source* set to
+   **Main input** (the default).
+3. On a MIDI track with any instrument, set **MIDI From** to that audio track,
+   then pick **NoteCap** in the chooser below it, not *Pre FX* or *Post FX*.
+   Arm the MIDI track.
+4. Play. The detected chord appears in NoteCap and the instrument plays it on
    the grid. Press record to capture it.
-7. Recommended: set **Edit → Record Quantization** to the same grid as NoteCap.
+5. Recommended: set **Edit → Record Quantization** to the same grid as NoteCap,
+   to snap chords that were detected after their grid line (see below).
 
-**Without the virtual port:** put NoteCap on the **audio track** itself (*Source*:
-**Main input**). On a separate MIDI track, set **MIDI From** to that audio track
-and then **NoteCap** in the second chooser. This uses Live's standard routing for
-[plug-in MIDI output](https://help.ableton.com/hc/en-us/articles/209070189-Accessing-the-MIDI-output-of-a-VST-plug-in).
-The port's back-dated timestamps don't apply on this route.
+*Source: Sidechain* is for putting NoteCap on a different track from the one it
+listens to. Pick the audio track in NoteCap's **Sidechain** section of the
+device header.
 
 ## Controls
 
 | Group | Control | What it does |
 |---|---|---|
-| Detect | Source | Sidechain (default) or the main input |
+| Detect | Source | Main input (default) or the sidechain |
 | | Gate | Input below this level counts as silence and releases the chord |
 | | Sensitivity | Higher detects more readily; lower needs a clearer chord |
 | | Min change | How long a chord change without a new strum must last (legato playing) |
@@ -60,39 +58,33 @@ The port's back-dated timestamps don't apply on this route.
 | Output | Voicing / Octave | Close, open, or bass + chord. Octave uses Live's naming (C3 = middle C) |
 | | Velocity | From the input level, or fixed |
 | | Channel | MIDI channel 1–16 |
-| | Port offset | Shifts the virtual port's timestamps to calibrate timing (see below) |
-| | Virtual MIDI port | Publish `NoteCap Out n` |
 | | Test chords | Ignores audio and plays C F G Am on every grid line. Use it to check routing and timing |
 
 **On quantizing in real time:** a chord can only be recognised about 110–200 ms
-after the strum, so a chord can't be moved *earlier*. In *Nearest* mode, if the
-chord's grid line hasn't arrived yet, the chord is scheduled for it. If the line
-has passed, the chord is sent at once and its virtual-port timestamp is
-back-dated to the grid line. This matters most at fine grids (1/16) and high
-tempos. Coarse grids (1/4, 1/2, bar) usually wait for the line.
+after the strum, so it can't be moved *earlier*. In *Nearest* mode, if the
+chord's grid line is still ahead, the chord is sent exactly on it. If the line
+has already passed, the chord is sent at once and arrives late. Live's
+**Record Quantization** snaps it back when it's less than half a grid step late.
+Coarse grids (1/4, 1/2, bar) usually catch the line; at 1/16 most chords are late.
 
 ## Phase 0 checklist (verify in your Live 12)
 
-These are the host behaviours the design depends on. They can only be checked
-inside Live:
+Chordism's LiveBridge tests already measured the VST3 *MIDI From* route in Live
+12.4.6 as sample-accurate. These checks are specific to NoteCap:
 
-- [ ] **Port visible:** after loading NoteCap, `NoteCap Out 1` appears in
-      Preferences → Link, Tempo & MIDI (restart Live if not), and a MIDI track
-      can select it as *MIDI From*.
 - [ ] **Routing + timing (Test chords):** turn on *Test chords*, Grid 1/4, press
-      play and record 8 bars on the armed MIDI track. Chords should be C F G Am
-      on every beat. Zoom in: are they exactly on the beat? If they're
-      consistently early or late, note the offset and set **Port offset** to
-      the opposite value, then re-check.
-- [ ] **Sidechain:** set Source to Sidechain, choose the guitar track in
-      NoteCap's sidechain selector, and play. The Status panel should show
-      `Input: sidechain` with a moving meter, not "sidechain not connected".
-- [ ] **Back-dating:** Grid 1/4, Mode Nearest, Live's Record Quantization
-      *off*. Strum on the beat and record. Are the chords on the beat (Live
-      honours timestamps) or ~150 ms late (it doesn't)? If late, turn Record
-      Quantization on.
-- [ ] Save the set, close Live, reopen: is the track still receiving from the
-      same `NoteCap Out n`?
+      play and record 8 bars on the MIDI track. Chords should be C F G Am, each
+      exactly on its beat.
+- [ ] **Detection:** play into the audio track. The Status panel shows
+      `Input: main input` with a moving meter, and the chords you play are
+      recorded.
+- [ ] **Sidechain (optional):** with NoteCap on another track and *Source* set
+      to Sidechain, choose the guitar track in the Sidechain section. Status
+      should not say "sidechain not connected".
+- [ ] **Late chords:** Grid 1/4, Mode Nearest, Record Quantization on 1/4.
+      Strum on the beat and record: the chords land on the beat.
+- [ ] Save the set, close Live and reopen it: NoteCap's settings and the MIDI
+      track's *MIDI From* routing are restored.
 
 ## Building
 
@@ -145,16 +137,17 @@ Remove one of the two.
 
 ```sh
 Tests/run_tests.sh          # core DSP: classifier, quantizer, voicing, engine + randomised benchmark
-Tests/run_integration.sh    # real processor + fake transport + CoreMIDI round trip (needs a Release build)
+Tests/run_integration.sh    # real processor + fake transport, checks its MIDI output (needs a Release build)
 ```
 
 The integration test also covers these hardening checks:
 - no heap allocation inside `processBlock`;
-- no stuck notes when the virtual port closes while a chord is held, with both
-  a real-time clock and a clock running ahead of it;
+- no stuck notes after a transport stop, bypass, or a host `reset()` /
+  `releaseResources()` (the note-offs go out on the next block);
 - recovery from NaN/Inf input;
-- four instances processing at once on separate threads, with no crosstalk
-  between their ports.
+- four instances processing at once on separate threads, with no crosstalk;
+- a state saved by the earlier build, which still had the virtual port's
+  settings, loads cleanly.
 
 The engine benchmark renders 300 synthetic strummed-guitar chords at 44.1, 48
 and 96 kHz, with random tuning and strum speeds. Current result: **98.7%
@@ -176,7 +169,6 @@ Visualiser.
 
 ```
 Source/core/     pure C++ DSP (no JUCE): chroma (NNLS), onset, classifier, engine, quantizer, voicing
-Source/midi/     CoreMIDI virtual source + sender thread
 Source/          PluginProcessor (scheduling, transport), PluginEditor (UI)
 Tests/           unit tests, engine benchmark, integration test, editor snapshot
 Tools/eval/      offline evaluator for WAV + .lab

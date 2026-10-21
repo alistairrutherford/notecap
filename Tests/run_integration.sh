@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Integration test: constructs the real NoteCapAudioProcessor, feeds it strummed
-# guitar on the sidechain under a fake 120 BPM transport, and checks the MIDI it
-# writes to the host buffer and to its CoreMIDI virtual port.
+# guitar under a fake 120 BPM transport, and checks the MIDI it
+# writes to the host buffer (what Live records through "MIDI From").
 #
 # Links against the compiled plugin, so it needs a Release build first:
 #     xcodebuild -project Builds/MacOSX/NoteCap.xcodeproj -target "NoteCap - All" \

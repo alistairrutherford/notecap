@@ -174,11 +174,8 @@ void StatusDisplay::paint (juce::Graphics& g)
         g.drawText (value, line, juce::Justification::centredLeft);
     };
 
-    const auto& out = proc.getMidiOut();
-    const bool wantPort = proc.apvts.getRawParameterValue ("virtualPort")->load() > 0.5f;
-    row ("MIDI port", out.isOpen() ? out.getName()
-                                   : (wantPort ? "failed to open (error " + juce::String (out.getLastError()) + ")" : "off"),
-         out.isOpen() ? colours::good : (wantPort ? colours::bad : colours::dim));
+    row ("MIDI out", "plugin output, channel " + juce::String ((int) proc.apvts.getRawParameterValue ("channel")->load()),
+         colours::text);
 
     const bool playing = proc.readout.playing.load();
     row ("Transport", (playing ? "playing  " : "stopped  ") + juce::String (proc.readout.bpm.load(), 1) + " BPM",
@@ -250,8 +247,6 @@ NoteCapAudioProcessorEditor::NoteCapAudioProcessorEditor (NoteCapAudioProcessor&
     addCombo (output, "velMode", "Velocity");
     addSlider (output, "velocity", "Fixed vel.");
     addSlider (output, "channel", "Channel");
-    addSlider (output, "offsetMs", "Port offset");
-    addToggle (output, "virtualPort", "Virtual MIDI port");
     addToggle (output, "testMode", "Test chords (C F G Am)");
 
     setSize (880, 530);
@@ -324,9 +319,9 @@ void NoteCapAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (12.0f));
     g.drawFittedText ("Nearest snaps each chord to the grid line closest to where it was played. "
-                      "If that line has already passed, the chord is sent at once and time-stamped on the line.\n\n"
-                      "To record: arm a MIDI track whose MIDI From is the NoteCap port shown in Status. "
-                      "Also set Live's Record Quantization to the same grid.",
+                      "If that line has already passed, the chord is sent at once.\n\n"
+                      "To record: on another MIDI track set MIDI From to this track, then NoteCap, and arm it. "
+                      "Set Live's Record Quantization to the same grid to snap late chords.",
                       tip, juce::Justification::topLeft, 12);
 }
 

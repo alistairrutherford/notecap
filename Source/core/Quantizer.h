@@ -1,7 +1,7 @@
 // Real-time grid quantisation. A real-time quantiser can only delay events, never
 // move them earlier, so "Nearest" snaps to the grid line nearest the *onset* when
-// that line is still ahead of us, and otherwise fires immediately flagged as late
-// (the MIDI port back-dates late events to the grid line they belong to).
+// that line is still ahead of us, and otherwise fires immediately, flagged as late
+// (Live's Record Quantization can then snap the recorded note).
 #pragma once
 
 #include <cmath>
@@ -46,7 +46,7 @@ namespace notecap
     struct QuantizeDecision
     {
         double fireAtPpq;   // when the event should be sent (>= now)
-        double stampPpq;    // where the event belongs musically (may be < now when late)
+        double gridPpq;     // the grid line the event belongs to (< now when late)
         bool late;
     };
 

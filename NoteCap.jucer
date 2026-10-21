@@ -30,12 +30,6 @@
         <FILE id="fQnt01" name="Quantizer.h" compile="0" resource="0" file="Source/core/Quantizer.h"/>
         <FILE id="fVoi01" name="Voicing.h" compile="0" resource="0" file="Source/core/Voicing.h"/>
       </GROUP>
-      <GROUP id="midiGp" name="midi">
-        <FILE id="fVmc01" name="VirtualMidiOut.cpp" compile="1" resource="0"
-              file="Source/midi/VirtualMidiOut.cpp"/>
-        <FILE id="fVmh01" name="VirtualMidiOut.h" compile="0" resource="0"
-              file="Source/midi/VirtualMidiOut.h"/>
-      </GROUP>
     </GROUP>
   </MAINGROUP>
   <MODULES>
@@ -58,7 +52,7 @@
   </MODULES>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
   <EXPORTFORMATS>
-    <XCODE_MAC targetFolder="Builds/MacOSX" extraFrameworks="CoreMIDI,Accelerate">
+    <XCODE_MAC targetFolder="Builds/MacOSX" extraFrameworks="Accelerate">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" targetName="NoteCap" macOSDeploymentTarget="12.0" osxArchitecture="Standard"/>
         <CONFIGURATION isDebug="0" name="Release" targetName="NoteCap" macOSDeploymentTarget="12.0" osxArchitecture="Standard"/>

@@ -27,6 +27,16 @@ Live's plugin hosting has three limits that affect this plugin directly. The arc
 3. **Live records the MIDI that arrives at a track's input, not the MIDI a plugin produces on that track.** Even with VST, the plugin's MIDI output has to be routed into a track's input before it can be recorded.
 4. **Sidechain support for AU plugins in Live is inconsistent.** Some forum reports say sidechain works only for VST2. This must be tested in Phase 0 against the user's Live version.
 
+> **Decision, 2026-10-21 (second change): the CoreMIDI virtual port is removed too.**
+> NoteCap records through VST3 *MIDI From: <NoteCap's track> / NoteCap*, with NoteCap on
+> the audio track it listens to (*Source: Main input*, now the default). Chordism's
+> LiveBridge measurements in Live 12.4.6 settled it: VST3 *MIDI From* is sample-accurate;
+> the port recorded one buffer + ~1.6 ms late; Live clamps timestamps more than ~1.6 ms
+> before arrival, so the port could never back-date late chords; and the port leaked
+> into every track whose input is *All Ins*. Late chords in *Nearest* mode now simply go
+> out when detected, and Live's Record Quantization snaps them. The *Virtual MIDI port*
+> and *Port offset* parameters are gone; old sets still load.
+>
 > **Decision, 2026-10-21: AU support removed; NoteCap is VST3-only.** Points 1,
 > 2 and 4 below were the AU-specific limits; with VST3, Live supports sidechain
 > input and can route the plugin's MIDI output to *another* track. The virtual
@@ -264,6 +274,11 @@ notecap/
 | 4. Quantizer + voicing | **Done** | Nearest / Next-line, swing, triplets, Hold / fixed lengths; close / open / bass + chord voicings. Integration-tested sample-accurately against a fake 120 BPM transport. |
 | 5. UI | **First version done** | Chord, pitch-class and status displays, plus all parameters. Snapshot: `Tests/snapshot_editor.cpp`. |
 | 6. Hardening | **Mostly done**; AU removed 2026-10-21 (VST3 + Standalone only) | See the Phase 6 log below. `pluginval` passes at strictness 10. Remaining: Developer ID signing and notarization (needs certificates), and checks only possible in Live (plugin rescan, fresh-Mac install). |
+
+**2026-10-21:** CoreMIDI virtual port removed (see §2). NoteCap's only output is the
+plugin's MIDI, recorded with VST3 *MIDI From*; *Source* defaults to Main input; a host
+`reset()` / `releaseResources()` now ends held notes on the next block. Integration tests
+reworked around the host MIDI buffer (23 checks).
 
 **2026-10-21:** AU support removed. The Projucer project builds VST3 and
 Standalone only, and the installer is VST3-only. The processor, engine and MIDI

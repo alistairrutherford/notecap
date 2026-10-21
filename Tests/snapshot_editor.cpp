@@ -35,7 +35,7 @@ int main (int argc, char** argv)
         ph.info.setBpm (120.0);
         ph.info.setPpqPosition ((double) pos / 24000.0);
         buf.clear();
-        for (int i = 0; i < 256; ++i) { buf.setSample (2, i, audio[pos + (size_t) i]); buf.setSample (3, i, audio[pos + (size_t) i]); }
+        for (int i = 0; i < 256; ++i) { buf.setSample (0, i, audio[pos + (size_t) i]); buf.setSample (1, i, audio[pos + (size_t) i]); }
         proc.processBlock (buf, midi);
     }
 
