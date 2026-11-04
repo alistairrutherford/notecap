@@ -45,20 +45,29 @@ device header.
 
 | Group | Control | What it does |
 |---|---|---|
-| Detect | Source | Main input (default) or the sidechain |
+| Detect | Mode | **Chords** (default) or **Single notes**: one note at a time, for melodies and riffs (see below) |
+| | Source | Main input (default) or the sidechain |
 | | Gate | Input below this level counts as silence and releases the chord |
 | | Sensitivity | Higher detects more readily; lower needs a clearer chord |
 | | Min change | How long a chord change without a new strum must last (legato playing) |
-| | 7th / Sus / Dim-aug | Chord vocabulary. Triads are always on |
-| | Retrigger | Re-send the chord when the same chord is strummed again |
+| | 7th / Sus / Dim-aug | Chord vocabulary (Chords mode). Triads are always on |
+| | Retrigger | Re-send the chord when the same chord is strummed again (Chords mode; in Single notes mode a re-picked note always starts a new note) |
 | Quantize | Grid | Off, 1 bar … 1/16, plus triplets |
 | | Mode | **Nearest**: the grid line closest to the strum. **Next line**: always the next line after detection. Always audibly on the grid, but can be one line late |
 | | Swing | Delays every other grid line |
 | | Length | Hold until the next chord, or a fixed 1/2/4/8 grid steps |
-| Output | Voicing / Octave | Close, open, or bass + chord. Octave uses Live's naming (C3 = middle C) |
+| Output | Voicing / Octave | Close, open, or bass + chord. Octave uses Live's naming (C3 = middle C). Single notes are sent at the pitch played |
 | | Velocity | From the input level, or fixed |
 | | Channel | MIDI channel 1–16 |
 | | Test chords | Ignores audio and plays C F G Am on every grid line. Use it to check routing and timing |
+
+**Single notes mode** tracks one note at a time with a YIN pitch detector, so a guitar line,
+bass line or voice becomes MIDI notes at the pitch played. A new pick (or a hammer-on or slide
+to a new pitch) starts a note; vibrato and slight bends stay on it; silence ends it. A note is
+known about **60–70 ms** after it's picked (chords take ~125 ms). Notes snap to the grid as
+chords do; their note-offs aren't quantized. Play one note at a time: two notes ringing
+together read as whichever is stronger. NoteCap reports the lowest pitch in the sound, so a
+synth patch with a sub-oscillator an octave down (like Drift's default) reads an octave low.
 
 **On quantizing in real time:** a chord can only be recognised about 110–200 ms
 after the strum, so it can't be moved *earlier*. In *Nearest* mode, if the
@@ -78,8 +87,9 @@ buffer 1024, 2026-10-21):
 | Detection (Chordism → Drift → NoteCap) | **14/14** chords, latency median 125 ms |
 | Sidechain (NoteCap on a silent track, fed from the synth) | **14/14** chords |
 | Late chords + Record Quantization 1/4 | ~125 ms late without it, **exactly on the beat** with it |
-| Settings survive duplicating the track | 18/18 settings match |
+| Settings survive duplicating the track | all settings match |
 | Settings and routing survive save and reopen | 18/18 settings, *MIDI From* intact |
+| Single notes (a melody clip → Drift → NoteCap) | **16/16** notes, 0 extra, latency median 68 ms (Live 12.4.16) |
 
 The only manual step is one save (Live's scripting API can't save a set). See
 [LiveBridge/README.md](LiveBridge/README.md#the-whole-phase-0-run).
@@ -134,7 +144,7 @@ Remove one of the two.
 ## Tests
 
 ```sh
-Tests/run_tests.sh          # core DSP: classifier, quantizer, voicing, engine + randomised benchmark
+Tests/run_tests.sh          # core DSP: classifier, quantizer, voicing, chord engine + note tracker, with benchmarks
 Tests/run_integration.sh    # real processor + fake transport, checks its MIDI output (needs a Release build)
 ```
 
@@ -146,6 +156,9 @@ The integration test also covers these hardening checks:
 - four instances processing at once on separate threads, with no crosstalk;
 - a state saved by the earlier build, which still had the virtual port's
   settings, loads cleanly.
+
+The single-note benchmark renders 360 picked notes across a guitar's range (E1 to E4 in Live's
+names) at 44.1, 48 and 96 kHz: **100% recall, 99% precision**, median latency 67 ms.
 
 The engine benchmark renders 300 synthetic strummed-guitar chords at 44.1, 48
 and 96 kHz, with random tuning and strum speeds. Current result: **98.7%
@@ -163,6 +176,7 @@ cd LiveBridge && uv sync && ./install_remote_script.sh
 # restart Live; Settings → Link, Tempo & MIDI → Control Surface: NoteCapBridge
 uv run pytest tests/test_routing_live.py     # Test chords via MIDI From: right chords, 0.000 ms
 uv run pytest tests/test_detection_live.py   # Chordism → Drift → NoteCap: detection + latency
+uv run pytest tests/test_notes_live.py       # a melody clip → Drift → NoteCap (Single notes)
 ```
 
 See [LiveBridge/README.md](LiveBridge/README.md) for the commands and the protocol.

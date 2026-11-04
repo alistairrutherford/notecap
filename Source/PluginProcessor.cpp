@@ -17,6 +17,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout NoteCapAudioProcessor::creat
     auto ms  = AudioParameterFloatAttributes().withLabel ("ms");
 
     // Detection
+    ps.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "mode", 1 }, "Mode", StringArray { "Chords", "Single notes" }, 0));
     ps.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "source", 1 }, "Source", StringArray { "Sidechain", "Main input" }, 1));
     ps.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "gate", 1 }, "Gate", NormalisableRange<float> (-80.0f, -20.0f, 0.5f), -50.0f,
                                                          AudioParameterFloatAttributes().withLabel ("dB")));
@@ -52,13 +53,14 @@ NoteCapAudioProcessor::NoteCapAudioProcessor()
       apvts (*this, nullptr, "NoteCap", createLayout())
 {
     auto get = [this] (const char* id) { return apvts.getRawParameterValue (id); };
-    pSource = get ("source"); pGate = get ("gate"); pSensitivity = get ("sensitivity"); pMinChord = get ("minChord");
+    pMode = get ("mode"); pSource = get ("source"); pGate = get ("gate"); pSensitivity = get ("sensitivity"); pMinChord = get ("minChord");
     pRetrigger = get ("retrigger"); pSevenths = get ("sevenths"); pSuspended = get ("suspended"); pDimAug = get ("dimAug");
     pGrid = get ("grid"); pQMode = get ("qmode"); pSwing = get ("swing"); pLength = get ("length");
     pVoicing = get ("voicing"); pOctave = get ("octave"); pVelMode = get ("velMode"); pVelocity = get ("velocity");
     pChannel = get ("channel"); pTestMode = get ("testMode");
 
     engine.prepare (sampleRate);
+    noteTracker.prepare (sampleRate);
 }
 
 NoteCapAudioProcessor::~NoteCapAudioProcessor() = default;
@@ -74,6 +76,10 @@ void NoteCapAudioProcessor::updateEngineParams()
     p.suspended = pSuspended->load() > 0.5f;
     p.dimAug = pDimAug->load() > 0.5f;
     engine.setParams (p);
+
+    NoteTracker::Params np;
+    np.gateDb = p.gateDb;
+    noteTracker.setParams (np);
 }
 
 QuantizeGrid NoteCapAudioProcessor::currentGrid() const
@@ -96,6 +102,7 @@ void NoteCapAudioProcessor::prepareToPlay (double sr, int samplesPerBlock)
     if (sounding.count > 0) flushRequested = true;
     sampleRate = sr;
     engine.prepare (sr);
+    noteTracker.prepare (sr);
     updateEngineParams();
     monoBuffer.setSize (1, std::max (samplesPerBlock, 32));
     numPending = 0;
@@ -161,6 +168,18 @@ void NoteCapAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     updateEngineParams();
 
+    // Switching between chords and single notes: end what's sounding, start the tracker afresh.
+    const int mode = pMode->load() > 0.5f ? 1 : 0;
+    if (mode != lastMode)
+    {
+        flushRequested = true;
+        noteTracker.reset();
+        lastDetectedNote = -1;
+        readout.note.store (-1);
+        lastMode = mode;
+    }
+    readout.mode.store (mode);
+
     // Stopping the transport ends any recording: release held chords, drop plans.
     // So does a host reset/release since the last block.
     if ((wasPlaying && ! t.playing) || flushRequested.exchange (false))
@@ -191,11 +210,18 @@ void NoteCapAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
 
     // ---- recognise, schedule, emit ----
+    // The chord engine always runs: its pitch-class display is shown in both modes.
     events.clear();
     engine.process (mono, n, sampleCounter, events);
+    noteEvents.clear();
+    if (mode == 1)
+        noteTracker.process (mono, n, sampleCounter, noteEvents);
 
     if (pTestMode->load() > 0.5f)
         scheduleTestChords (t, sampleCounter, n);
+    else if (mode == 1)
+        for (const auto& e : noteEvents)
+            handleNoteEvent (e, t, sampleCounter);
     else
         for (const auto& e : events)
             handleChordEvent (e, t, sampleCounter);
@@ -203,7 +229,18 @@ void NoteCapAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     firePending (midi, t, sampleCounter, n);
 
     // ---- read-outs ----
-    if (pTestMode->load() < 0.5f)
+    if (mode == 1 && pTestMode->load() < 0.5f)
+    {
+        const int note = noteTracker.getCurrentNote();
+        if (note != lastDetectedNote)
+        {
+            if (lastDetectedNote >= 0) readout.previousNote.store (lastDetectedNote);
+            lastDetectedNote = note;
+            readout.note.store (note);
+        }
+        readout.confidence.store (noteTracker.getConfidence());
+    }
+    else if (pTestMode->load() < 0.5f)
     {
         const int32_t packed = engine.getCurrentChord().pack();
         if (packed != lastDetectedPacked)
@@ -215,7 +252,7 @@ void NoteCapAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         readout.confidence.store (engine.getCurrentScore());
     }
     readout.levelDb.store (engine.getLevelDb());
-    readout.tuningCents.store ((float) engine.getTuningCents());
+    readout.tuningCents.store ((float) (mode == 1 ? noteTracker.getTuningCents() : engine.getTuningCents()));
     readout.latencyMs.store (latencyAvgMs);
     readout.bpm.store ((float) t.bpm);
     readout.playing.store (t.playing);
@@ -255,33 +292,80 @@ void NoteCapAudioProcessor::handleChordEvent (const ChordEvent& e, const Transpo
         return;
     }
 
-    const double spp = sampleRate * 60.0 / t.bpm;  // samples per quarter note
-    auto toPpq = [&] (int64_t s) { return t.ppq + (double) (s - blockStart) / spp; };
-    auto toSample = [&] (double ppq) { return blockStart + (int64_t) std::llround ((ppq - t.ppq) * spp); };
-
     Pending p;
     p.segment = e.segment;
     p.chord = e.chord;
+    p.velocity = velocityFor (e.levelDb);
+    schedule (p, e.onsetSample, e.detectSample, t, blockStart);
+}
+
+void NoteCapAudioProcessor::handleNoteEvent (const NoteEvent& e, const Transport& t, int64_t blockStart)
+{
+    // Segments get a high bit so a note can never be mistaken for a chord from before a mode switch.
+    const uint32_t segment = e.segment | 0x40000000u;
+
+    if (e.note >= 0)
+    {
+        latencyAvgMs = latencyAvgMs <= 0.0f ? (float) ((e.detectSample - e.onsetSample) * 1000.0 / sampleRate)
+                                            : 0.8f * latencyAvgMs + 0.2f * (float) ((e.detectSample - e.onsetSample) * 1000.0 / sampleRate);
+        Pending p;
+        p.segment = segment;
+        p.mono = true;
+        p.monoNote = e.note;
+        p.velocity = velocityFor (e.levelDb);
+        schedule (p, e.onsetSample, e.detectSample, t, blockStart);
+        return;
+    }
+
+    // The note ended. With a fixed Length its own release is already planned. In Hold mode it ends
+    // now (note-offs aren't quantised: a short note snapped to the grid would vanish), but never
+    // before its note-on has gone out, and at least 30 ms after it.
+    if (lengthSteps[juce::jlimit (0, 4, (int) pLength->load())] > 0)
+        return;
+    const int64_t minLength = (int64_t) (0.03 * sampleRate);
+    int64_t at = e.detectSample;
+    for (int i = 0; i < numPending; ++i)
+        if (pending[(size_t) i].segment == segment && ! pending[(size_t) i].releaseOnly)
+            at = std::max (at, pending[(size_t) i].fireAt + minLength);
+    if (soundingSegment == segment)
+        at = std::max (at, lastNoteOnSample + minLength);
+
+    Pending off;
+    off.segment = segment;
+    off.releaseOnly = true;
+    off.mono = true;
+    off.fireAt = off.gridAt = at;
+    addPending (off);
+}
+
+uint8_t NoteCapAudioProcessor::velocityFor (float levelDb) const
+{
+    if (pVelMode->load() < 0.5f)
+    {
+        const float gate = pGate->load();
+        return (uint8_t) juce::jlimit (1, 127, (int) std::lround (40.0f + 87.0f * juce::jlimit (0.0f, 1.0f, (levelDb - gate) / 40.0f)));
+    }
+    return (uint8_t) juce::jlimit (1, 127, (int) pVelocity->load());
+}
+
+void NoteCapAudioProcessor::schedule (Pending& p, int64_t onsetSample, int64_t detectSample, const Transport& t,
+                                      int64_t blockStart)
+{
+    const double spp = sampleRate * 60.0 / t.bpm;  // samples per quarter note
+    auto toPpq = [&] (int64_t s) { return t.ppq + (double) (s - blockStart) / spp; };
+    auto toSample = [&] (double ppq) { return blockStart + (int64_t) std::llround ((ppq - t.ppq) * spp); };
 
     const auto grid = currentGrid();
     if (t.playing && grid.active())
     {
         const auto mode = pQMode->load() < 0.5f ? QuantizeMode::Nearest : QuantizeMode::Next;
-        const auto d = quantize (toPpq (e.onsetSample), toPpq (e.detectSample), mode, grid);
-        p.fireAt = std::max (toSample (d.fireAtPpq), e.detectSample);
+        const auto d = quantize (toPpq (onsetSample), toPpq (detectSample), mode, grid);
+        p.fireAt = std::max (toSample (d.fireAtPpq), detectSample);
         p.gridAt = std::min (toSample (d.gridPpq), p.fireAt);
         p.late = d.late;
     }
     else
-        p.fireAt = p.gridAt = e.detectSample;
-
-    if (pVelMode->load() < 0.5f)
-    {
-        const float gate = pGate->load();
-        p.velocity = (uint8_t) juce::jlimit (1, 127, (int) std::lround (40.0f + 87.0f * juce::jlimit (0.0f, 1.0f, (e.levelDb - gate) / 40.0f)));
-    }
-    else
-        p.velocity = (uint8_t) juce::jlimit (1, 127, (int) pVelocity->load());
+        p.fireAt = p.gridAt = detectSample;
 
     // A newer change supersedes any not-yet-sent change planned for the same time or later.
     for (int i = numPending; --i >= 0;)
@@ -362,11 +446,18 @@ void NoteCapAudioProcessor::fire (const Pending& p, juce::MidiBuffer& midi, cons
     }
 
     const auto style = (VoicingStyle) juce::jlimit (0, 2, (int) pVoicing->load());
-    const auto voicing = makeVoicing (p.chord, style, (int) pOctave->load());
+    Voicing voicing;
+    if (p.mono)
+        voicing.add (p.monoNote);   // single notes: the pitch as played
+    else
+        voicing = makeVoicing (p.chord, style, (int) pOctave->load());
     const int channel = juce::jlimit (1, 16, (int) pChannel->load());
     auto contains = [] (const Voicing& v, int note) { return std::find (v.begin(), v.end(), note) != v.end(); };
 
-    readout.sentChord.store (p.chord.pack());
+    if (p.mono)
+        readout.sentNote.store (p.monoNote);
+    else
+        readout.sentChord.store (p.chord.pack());
     readout.lastWasLate.store (p.late);
 
     if (p.replacement && soundingSegment == p.segment && channel == soundingChannel && ! p.chord.isNone())
@@ -383,7 +474,7 @@ void NoteCapAudioProcessor::fire (const Pending& p, juce::MidiBuffer& midi, cons
     else
     {
         allNotesOff (midi, offset);
-        if (p.chord.isNone())
+        if (voicing.count == 0)
             return;
         for (int note : voicing)
             midi.addEvent (juce::MidiMessage::noteOn (channel, note, p.velocity), offset);
@@ -396,6 +487,7 @@ void NoteCapAudioProcessor::fire (const Pending& p, juce::MidiBuffer& midi, cons
     lastFiredGridAt = p.gridAt;
     lastFiredChord = p.chord;
     lastFiredVelocity = p.velocity;
+    lastNoteOnSample = p.fireAt;
     if (! p.replacement)
         readout.chordsSent.fetch_add (1);
 

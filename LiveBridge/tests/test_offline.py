@@ -55,6 +55,24 @@ class Track(Obj):
         self.arrangement_clips.remove(clip)
 
 
+class ClipSlot(Obj):
+    def __init__(self):
+        super().__init__(has_clip=False, clip=None, fired=False)
+
+    def create_clip(self, length):
+        notes = []
+        clip = Clip(notes, length=length)
+        clip.set_notes = lambda tup: notes.extend(Note(pitch=p, start_time=s, duration=d, velocity=v, mute=m)
+                                                  for p, s, d, v, m in tup)
+        self.clip, self.has_clip = clip, True
+
+    def delete_clip(self):
+        self.clip, self.has_clip = None, False
+
+    def fire(self):
+        self.fired = True
+
+
 class Song(Obj):
     def __init__(self, tracks):
         super().__init__(tracks=tracks, master_track=Track("Master"), tempo=120.0,
@@ -247,6 +265,24 @@ def test_duplicate_track():
     assert w.song.tracks[1].devices[0] is w.plugin
     with pytest.raises(bridge_commands.CommandError):
         w.cmds.dispatch("duplicate_track", {"track": "master"})
+
+
+def test_create_and_fire_midi_clip():
+    w = make_world()
+    w.rec.clip_slots = [ClipSlot(), ClipSlot()]
+    res = w.cmds.dispatch("create_midi_clip", {"track": "NoteCap Rec", "scene": 1, "length": 8,
+                                               "notes": [{"pitch": 40, "start": 0, "duration": 0.75},
+                                                         {"pitch": 52, "start": 1, "duration": 0.75, "velocity": 90}]})
+    assert res == {"track": 1, "scene": 1, "length": 8.0, "notes": 2}
+    clip = w.rec.clip_slots[1].clip
+    assert [(n.pitch, n.start_time, n.velocity) for n in clip.get_notes_extended(0, 128, 0, 8)] == [(40, 0.0, 100), (52, 1.0, 90)]
+    w.cmds.dispatch("fire_clip", {"track": 1, "scene": 1})
+    assert w.rec.clip_slots[1].fired
+    with pytest.raises(bridge_commands.CommandError, match="no clip"):
+        w.cmds.dispatch("fire_clip", {"track": 1, "scene": 0})
+    w.src.has_midi_input = False
+    with pytest.raises(bridge_commands.CommandError, match="not a MIDI track"):
+        w.cmds.dispatch("create_midi_clip", {"track": 0, "notes": []})
 
 
 # -- timing math -------------------------------------------------------------

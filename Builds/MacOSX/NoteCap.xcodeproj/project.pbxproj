@@ -124,6 +124,7 @@
 		93F4E863B791BD15EDA4A72B /* Info-VST3.plist */ /* Info-VST3.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Info-VST3.plist"; path = "Info-VST3.plist"; sourceTree = SOURCE_ROOT; };
 		9664CC77E2F4BE2F14DAE8E9 /* include_juce_audio_plugin_client_VST3.mm */ /* include_juce_audio_plugin_client_VST3.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_audio_plugin_client_VST3.mm; path = ../../JuceLibraryCode/include_juce_audio_plugin_client_VST3.mm; sourceTree = SOURCE_ROOT; };
 		971CFE57CECD8E146CF69437 /* include_juce_dsp.mm */ /* include_juce_dsp.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_dsp.mm; path = ../../JuceLibraryCode/include_juce_dsp.mm; sourceTree = SOURCE_ROOT; };
+		99E9C3E3E611DA453C2E52C8 /* NoteTracker.h */ /* NoteTracker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = NoteTracker.h; path = ../../Source/core/NoteTracker.h; sourceTree = SOURCE_ROOT; };
 		9D6458F298EA2C169D940CE0 /* ChordClassifier.h */ /* ChordClassifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ChordClassifier.h; path = ../../Source/core/ChordClassifier.h; sourceTree = SOURCE_ROOT; };
 		A1CFFB2DCF524326CFB74B8A /* include_juce_graphics_Harfbuzz.cpp */ /* include_juce_graphics_Harfbuzz.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = include_juce_graphics_Harfbuzz.cpp; path = ../../JuceLibraryCode/include_juce_graphics_Harfbuzz.cpp; sourceTree = SOURCE_ROOT; };
 		A29DCC13ACF7C54C4D2E5C5F /* CoreAudio.framework */ /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
@@ -330,6 +331,7 @@
 				8DF22B3093CF7DF7F6C0E284,
 				4BFC6523FC6C2BF66AD76746,
 				31A9695CCB9F5C2A918DFB47,
+				99E9C3E3E611DA453C2E52C8,
 			);
 			name = core;
 			sourceTree = "<group>";

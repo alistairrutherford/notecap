@@ -29,6 +29,7 @@
         <FILE id="fEng01" name="ChordEngine.h" compile="0" resource="0" file="Source/core/ChordEngine.h"/>
         <FILE id="fQnt01" name="Quantizer.h" compile="0" resource="0" file="Source/core/Quantizer.h"/>
         <FILE id="fVoi01" name="Voicing.h" compile="0" resource="0" file="Source/core/Voicing.h"/>
+        <FILE id="fNtt01" name="NoteTracker.h" compile="0" resource="0" file="Source/core/NoteTracker.h"/>
       </GROUP>
     </GROUP>
   </MAINGROUP>

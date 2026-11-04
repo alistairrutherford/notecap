@@ -418,6 +418,26 @@ static void testNoAllocationInProcessBlock()
     check (! host.notes.empty() && alloccount::count.load() == 0,
            "no heap allocation inside processBlock (" + std::to_string (alloccount::count.load()) + " over "
                + std::to_string (host.pos / block) + " blocks, " + std::to_string (host.notes.size()) + " MIDI events)");
+
+    // Single-notes mode runs the note tracker as well.
+    NoteCapAudioProcessor mono;
+    setParam (mono, "mode", 1);
+    setParam (mono, "grid", 4);
+    const auto line = testsynth::renderGuitar ({ { 0.3, { 52 }, "" }, { 0.6, { 55 }, "" }, { 0.9, { 59 }, "" },
+                                                 { 1.2, { 64 }, "" }, { 1.5, { 40 }, "" } }, fs, 2.5, 0.0, 3, 0.0);
+    {
+        Host warm (mono);
+        warm.play (line);
+        warm.stop();
+    }
+    Host h2 (mono);
+    alloccount::count = 0;
+    h2.countAllocations = true;
+    h2.play (line);
+    h2.stop (8);
+    check (! h2.notes.empty() && alloccount::count.load() == 0,
+           "single-notes mode: no heap allocation inside processBlock (" + std::to_string (alloccount::count.load())
+               + " over " + std::to_string (h2.pos / block) + " blocks)");
 }
 
 static void testRecoversFromNaN()
@@ -479,6 +499,95 @@ static void testConcurrentInstances()
     check (isolated, "no crosstalk between instances; each played its own chord and released it (" + detail + ")");
 }
 
+
+// Single picked notes on the synthetic guitar, `offsetSec` from beats 2, 3, ... at 120 BPM.
+static std::vector<float> pickedMelody (const std::vector<int>& notes, double offsetSec, double length)
+{
+    std::vector<testsynth::Strum> s;
+    for (size_t i = 0; i < notes.size(); ++i)
+        s.push_back ({ 1.0 + 0.5 * (double) i + offsetSec, { notes[i] }, "" });
+    return testsynth::renderGuitar (s, fs, length, 0.0, 5, 0.0);
+}
+
+static void testSingleNotes()
+{
+    std::cout << "== single-notes mode ==\n";
+    const std::vector<int> melody { 52, 55, 57, 59, 62, 64, 59, 45 };
+    {
+        // Picked 150 ms ahead of each beat: known before the beat, so sent exactly on it.
+        NoteCapAudioProcessor proc;
+        setParam (proc, "mode", 1);
+        setParam (proc, "grid", 3);     // 1/4
+        setParam (proc, "qmode", 0);    // nearest
+        Host host (proc);
+        host.play (pickedMelody (melody, -0.150, 6.0));
+        host.stop();
+        const auto groups = chordsBySample (host.notes);
+        bool onBeat = true, single = true;
+        std::vector<int> got;
+        int i = 0;
+        for (const auto& [s, v] : groups)
+        {
+            onBeat &= s == (2 + i++) * samplesPerBeat;
+            single &= v.size() == 1;
+            if (! v.empty()) got.push_back (v[0]);
+        }
+        check (got == melody, "the melody's pitches, in order (" + std::to_string (got.size()) + " notes)");
+        check (single, "one note at a time (no chords)");
+        check (onBeat, "each note exactly on its beat");
+        check (sounding (host.notes).empty(), "transport stop releases the last note");
+    }
+    {
+        // Grid Off: each note goes out as soon as it's known.
+        NoteCapAudioProcessor proc;
+        setParam (proc, "mode", 1);
+        setParam (proc, "grid", 0);
+        Host host (proc);
+        host.play (pickedMelody (melody, 0.0, 6.0));
+        std::vector<int> got;
+        std::string lateness;
+        bool soon = true;
+        int i = 0;
+        for (const auto& [s, v] : chordsBySample (host.notes))
+        {
+            got.push_back (v[0]);
+            const int64_t ms = (s - (2 + i++) * samplesPerBeat) * 1000 / (int64_t) fs;
+            lateness += std::to_string (ms) + " ";
+            soon &= ms > 0 && ms < 120;
+        }
+        check (got == melody, "grid off: the melody's pitches");
+        check (soon, "grid off: each note 0-120 ms after its pick (" + lateness + ")");
+    }
+    {
+        NoteCapAudioProcessor proc;
+        setParam (proc, "mode", 1);
+        setParam (proc, "grid", 3);
+        setParam (proc, "qmode", 1);    // next line
+        setParam (proc, "length", 1);   // 1 step
+        Host host (proc);
+        host.play (testsynth::renderGuitar ({ { 1.0, { 57 }, "" } }, fs, 3.0, 0.0, 5, 0.0));
+        int64_t on = -1, off = -1;
+        for (const auto& n : host.notes)
+        {
+            if (n.on && on < 0) on = n.sample;
+            if (! n.on && off < 0) off = n.sample;
+        }
+        check (on >= 0 && off - on == samplesPerBeat, "fixed length: note-off one grid step after note-on");
+    }
+    {
+        // Switching mode while a note sounds ends it on the next block.
+        NoteCapAudioProcessor proc;
+        setParam (proc, "mode", 1);
+        setParam (proc, "grid", 0);
+        Host host (proc);
+        host.play (testsynth::renderGuitar ({ { 0.3, { 50 }, "" } }, fs, 1.0, 0.0, 5, 0.0));
+        const bool held = sounding (host.notes) == std::set<int> { 50 };
+        setParam (proc, "mode", 0);
+        host.play ({}, true, 1);
+        check (held && sounding (host.notes).empty(), "switching to Chords mid-note releases it");
+    }
+}
+
 int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -492,5 +601,6 @@ int main()
     testNoAllocationInProcessBlock();
     testRecoversFromNaN();
     testConcurrentInstances();
+    testSingleNotes();
     return testutil::finish ("test_plugin");
 }

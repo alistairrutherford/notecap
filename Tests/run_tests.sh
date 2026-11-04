@@ -33,6 +33,7 @@ compile_and_run () {
 
 compile_and_run test_core
 compile_and_run test_engine
+compile_and_run test_notes
 
 echo ""
 echo "All test binaries passed."

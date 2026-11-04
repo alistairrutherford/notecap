@@ -83,28 +83,36 @@ void ChordDisplay::paint (juce::Graphics& g)
     drawPanel (g, r);
     r = r.reduced (14.0f, 10.0f);
 
+    const bool notes = proc.readout.mode.load() == 1;
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText ("DETECTED", r.removeFromTop (14.0f), juce::Justification::centredLeft);
+    g.drawText (notes ? "DETECTED NOTE" : "DETECTED", r.removeFromTop (14.0f), juce::Justification::centredLeft);
 
+    // Chords mode shows a chord name; single-notes mode a note name (Live's octaves, C3 = 60).
     const auto chord = Chord::unpack (proc.readout.chord.load());
+    const int note = proc.readout.note.load();
+    const bool none = notes ? note < 0 : chord.isNone();
+    const juce::String name = notes ? juce::String (noteName (note)) : juce::String (chord.name());
     const float conf = proc.readout.confidence.load();
-    g.setColour (chord.isNone() ? colours::dim : colours::text);
-    g.setFont (juce::FontOptions (chord.name().size() > 5 ? 50.0f : 64.0f, juce::Font::bold));
-    g.drawFittedText (chord.isNone() ? juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")) : juce::String (chord.name()),
+    g.setColour (none ? colours::dim : colours::text);
+    g.setFont (juce::FontOptions (name.length() > 5 ? 50.0f : 64.0f, juce::Font::bold));
+    g.drawFittedText (none ? juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")) : name,
                       r.removeFromTop (84.0f).toNearestInt(), juce::Justification::centredLeft, 1);
 
     const auto prev = Chord::unpack (proc.readout.previousChord.load());
+    const int prevNote = proc.readout.previousNote.load();
+    const juce::String prevName = notes ? (prevNote >= 0 ? juce::String (noteName (prevNote)) : juce::String())
+                                        : (prev.isNone() ? juce::String() : juce::String (prev.name()));
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (13.0f));
-    g.drawText (prev.isNone() ? juce::String() : "previous  " + juce::String (prev.name()),
+    g.drawText (prevName.isEmpty() ? juce::String() : "previous  " + prevName,
                 r.removeFromTop (20.0f), juce::Justification::centredLeft);
 
     r.removeFromTop (8.0f);
     auto bar = r.removeFromTop (6.0f);
     g.setColour (colours::outline);
     g.fillRoundedRectangle (bar, 3.0f);
-    const float level = chord.isNone() ? 0.0f : juce::jlimit (0.0f, 1.0f, (conf - 0.4f) / 0.6f);
+    const float level = none ? 0.0f : juce::jlimit (0.0f, 1.0f, (conf - 0.4f) / 0.6f);
     g.setColour (level > 0.5f ? colours::good : colours::warn);
     g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * level), 3.0f);
     g.setColour (colours::dim);
@@ -123,9 +131,13 @@ void ChromaDisplay::paint (juce::Graphics& g)
     g.drawText ("PITCH CLASSES", r.removeFromTop (14.0f), juce::Justification::centredLeft);
     r.removeFromTop (6.0f);
 
-    const auto chord = Chord::unpack (proc.readout.chord.load());
     bool inChord[12] {};
-    for (int pc : chord.pitchClasses()) inChord[pc] = true;
+    if (proc.readout.mode.load() == 1)
+    {
+        if (const int note = proc.readout.note.load(); note >= 0) inChord[note % 12] = true;
+    }
+    else
+        for (int pc : Chord::unpack (proc.readout.chord.load()).pitchClasses()) inChord[pc] = true;
     const int bass = proc.readout.bassPc.load();
 
     auto labels = r.removeFromBottom (16.0f);
@@ -206,9 +218,12 @@ void StatusDisplay::paint (juce::Graphics& g)
     const float cents = proc.readout.tuningCents.load();
     row ("Tuning", (cents >= 0 ? "+" : "") + juce::String (juce::roundToInt (cents)) + " cents", colours::text);
 
+    const bool notes = proc.readout.mode.load() == 1;
     const auto sent = Chord::unpack (proc.readout.sentChord.load());
-    row ("Sent", (sent.isNone() ? juce::String ("-") : juce::String (sent.name()))
-                     + (proc.readout.lastWasLate.load() && ! sent.isNone() ? "  (late)" : "")
+    const int sentNote = proc.readout.sentNote.load();
+    const bool sentNone = notes ? sentNote < 0 : sent.isNone();
+    row ("Sent", (sentNone ? juce::String ("-") : notes ? juce::String (noteName (sentNote)) : juce::String (sent.name()))
+                     + (proc.readout.lastWasLate.load() && ! sentNone ? "  (late)" : "")
                      + "   " + juce::String (proc.readout.chordsSent.load()) + " total",
          colours::accent);
 }
@@ -224,6 +239,7 @@ NoteCapAudioProcessorEditor::NoteCapAudioProcessorEditor (NoteCapAudioProcessor&
 
     auto& detect = groups[0];
     detect.title = "DETECT";
+    addCombo (detect, "mode", "Mode");
     addCombo (detect, "source", "Source");
     addSlider (detect, "gate", "Gate");
     addSlider (detect, "sensitivity", "Sensitivity");
@@ -249,7 +265,7 @@ NoteCapAudioProcessorEditor::NoteCapAudioProcessorEditor (NoteCapAudioProcessor&
     addSlider (output, "channel", "Channel");
     addToggle (output, "testMode", "Test chords (C F G Am)");
 
-    setSize (880, 530);
+    setSize (880, 560);
     startTimerHz (30);
 }
 

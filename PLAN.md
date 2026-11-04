@@ -364,3 +364,29 @@ needed.
     an input bus; Live never disables the sidechain).
   - Not yet run in CI.
 - Checks that need Live: plugin rescan, and installing on a clean Mac.
+
+### Single notes mode (2026-11-04)
+
+A *Mode* parameter (Chords / Single notes). `core/NoteTracker.h`: YIN pitch (46 ms window,
+70–1500 Hz) on the decimated signal, the existing onset detector, and a note state machine.
+A new pick or a legato pitch change (hammer-on, slide) starts a note after 30 ms of stable
+pitch. After a pick it waits until half the YIN window holds the new attack. Vibrato and
+slight bends (±0.6 semitone) stay on the note, a re-pick of the same note retriggers, and
+60 ms without a clear pitch ends it. Pitch is tuning-compensated like the chords. Notes are
+quantised like chords; note-offs aren't (a short note snapped to the grid would vanish), and
+come at least 30 ms after the note-on. The chord engine keeps running for the pitch-class
+display.
+
+- **Offline** (`Tests/test_notes.cpp`): 360 picked notes over E1–E4 (Live names) at
+  44.1/48/96 kHz with ±30-cent detune: **100% recall, 99.2% precision**, latency median 67
+  ms (held-out seeds: 100% / 99.4%). Re-picks, octave jumps, hammer-on/slide changes,
+  ±30-cent vibrato, +30 cents and A=432 tuning, release, and block-size independence pass.
+- **Plug-in** (`test_plugin.cpp`): early picks exactly on the beat as single notes; grid
+  Off 56–65 ms after the pick; fixed length; switching mode mid-note releases it; no
+  allocation in `processBlock` in either mode. `pluginval` strictness 10 passes.
+- **Live** (`LiveBridge/tests/test_notes_live.py`, Live 12.4.16): a 16-note melody clip →
+  Drift → NoteCap → recorded: **16/16, 0 extra, latency median 68 ms (max 81)**. The first
+  run came back an octave low: Drift's default patch adds a sine an octave down (Osc 2),
+  which is then the sound's real fundamental. The test switches it off. New bridge commands:
+  `create_midi_clip`, `fire_clip`, `stop_all_clips`.
+- The other Live tests pass again on 12.4.16.

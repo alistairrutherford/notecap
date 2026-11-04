@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "core/ChordEngine.h"
+#include "core/NoteTracker.h"
 #include "core/Quantizer.h"
 #include "core/Voicing.h"
 #include <array>
@@ -48,6 +49,8 @@ public:
     struct Readout
     {
         std::atomic<int32_t> chord { -1 }, previousChord { -1 }, sentChord { -1 };
+        std::atomic<int> mode { 0 };                                   // 0 chords, 1 single notes
+        std::atomic<int> note { -1 }, previousNote { -1 }, sentNote { -1 };   // single notes (MIDI)
         std::atomic<float> confidence { 0 }, levelDb { -100 }, tuningCents { 0 }, latencyMs { 0 }, bpm { 120 };
         std::array<std::atomic<float>, 12> chroma {};
         std::atomic<int> bassPc { -1 };
@@ -67,6 +70,8 @@ private:
         bool releaseOnly = false;
         bool late = false;
         bool replacement = false;  // correction of the chord already sounding: send only the difference
+        bool mono = false;         // single-notes mode: plays `monoNote` instead of a chord voicing
+        int monoNote = -1;
     };
 
     struct Transport
@@ -77,6 +82,9 @@ private:
 
     void updateEngineParams();
     void handleChordEvent (const notecap::ChordEvent& e, const Transport& t, int64_t blockStart);
+    void handleNoteEvent (const notecap::NoteEvent& e, const Transport& t, int64_t blockStart);
+    void schedule (Pending& p, int64_t onsetSample, int64_t detectSample, const Transport& t, int64_t blockStart);
+    uint8_t velocityFor (float levelDb) const;
     void addPending (const Pending& p);
     void scheduleTestChords (const Transport& t, int64_t blockStart, int numSamples);
     void firePending (juce::MidiBuffer& midi, const Transport& t, int64_t blockStart, int numSamples);
@@ -86,7 +94,7 @@ private:
     double stepPpq() const;
 
     // parameters
-    std::atomic<float>* pSource = nullptr, *pGate = nullptr, *pSensitivity = nullptr, *pMinChord = nullptr,
+    std::atomic<float>* pMode = nullptr, *pSource = nullptr, *pGate = nullptr, *pSensitivity = nullptr, *pMinChord = nullptr,
                       * pRetrigger = nullptr, *pSevenths = nullptr, *pSuspended = nullptr, *pDimAug = nullptr,
                       * pGrid = nullptr, *pQMode = nullptr, *pSwing = nullptr, *pLength = nullptr,
                       * pVoicing = nullptr, *pOctave = nullptr, *pVelMode = nullptr, *pVelocity = nullptr,
@@ -94,6 +102,11 @@ private:
 
     notecap::ChordEngine engine;
     notecap::ChordEventList events;
+    notecap::NoteTracker noteTracker;
+    notecap::NoteEventList noteEvents;
+    int lastMode = 0;
+    int lastDetectedNote = -1;
+    int64_t lastNoteOnSample = 0;
 
     juce::AudioBuffer<float> monoBuffer;
     double sampleRate = 44100.0;

@@ -571,6 +571,48 @@ class Commands:
         return {"record_mode": bool(s.record_mode), "session_record": bool(s.session_record),
                 "is_playing": bool(s.is_playing), "current_song_time": s.current_song_time}
 
+    def _slot(self, t, scene):
+        slots = list(t.clip_slots)
+        if not isinstance(scene, int) or not 0 <= scene < len(slots):
+            raise CommandError("scene %r out of range (0..%d)" % (scene, len(slots) - 1))
+        return slots[scene]
+
+    def cmd_create_midi_clip(self, track, scene=0, length=4.0, notes=(), name=None):
+        """Write a MIDI clip into a session slot (replacing what's there). `notes`: a list of
+        {pitch, start, duration, velocity?} in beats. Fire it with fire_clip."""
+        t = self._track(track)
+        if not t.has_midi_input:
+            raise CommandError("track %r is not a MIDI track" % t.name)
+        slot = self._slot(t, int(scene))
+        if slot.has_clip:
+            slot.delete_clip()
+        slot.create_clip(float(length))
+        clip = slot.clip
+        if name:
+            clip.name = str(name)
+        specs = [(int(n["pitch"]), float(n["start"]), float(n["duration"]), int(n.get("velocity", 100))) for n in notes]
+        try:
+            import Live
+            spec = Live.Clip.MidiNoteSpecification
+            clip.add_new_notes(tuple(spec(pitch=p, start_time=s, duration=d, velocity=v, mute=False)
+                                     for p, s, d, v in specs))
+        except (ImportError, AttributeError):
+            clip.set_notes(tuple((p, s, d, v, False) for p, s, d, v in specs))   # Live 10 API / offline tests
+        return {"track": self._track_index(t), "scene": int(scene), "length": float(length), "notes": len(specs)}
+
+    def cmd_fire_clip(self, track, scene=0):
+        """Launch a session clip (it starts on Live's launch quantisation, or with the transport)."""
+        t = self._track(track)
+        slot = self._slot(t, int(scene))
+        if not slot.has_clip:
+            raise CommandError("no clip in slot %d of %r" % (scene, t.name))
+        slot.fire()
+        return {"track": self._track_index(t), "scene": int(scene)}
+
+    def cmd_stop_all_clips(self):
+        self._song().stop_all_clips()
+        return {"stopped": True}
+
     def cmd_clear_session_clips(self, track):
         """Delete every clip in the track's session slots (Phase 7: looped takes are recorded there)."""
         t = self._track(track)

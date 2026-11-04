@@ -19,6 +19,7 @@ REPORT_DIR = os.path.join(os.path.dirname(HERE), "reports")
 # Live shows no value items for a VST3 plug-in's choice parameters, so a choice is set by its
 # normalised position, index / (count - 1), and checked against the display text.
 NOTECAP_CHOICES = {
+    "Mode": ["Chords", "Single notes"],
     "Source": ["Sidechain", "Main input"],
     "Grid": ["Off", "1 Bar", "1/2", "1/4", "1/8", "1/16", "1/4T", "1/8T", "1/16T"],
     "Quantize Mode": ["Nearest", "Next line"],

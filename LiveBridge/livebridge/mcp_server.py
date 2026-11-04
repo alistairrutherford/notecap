@@ -94,6 +94,24 @@ def duplicate_track(track: Key) -> dict:
 
 
 @mcp.tool()
+def create_midi_clip(track: Key, notes: list, length: float = 4.0, scene: int = 0, name: Optional[str] = None) -> dict:
+    """Write a MIDI clip into a session slot, replacing it. notes: [{pitch, start, duration, velocity?}] in beats."""
+    return _call("create_midi_clip", track=track, notes=notes, length=length, scene=scene, name=name)
+
+
+@mcp.tool()
+def fire_clip(track: Key, scene: int = 0) -> dict:
+    """Launch a session clip."""
+    return _call("fire_clip", track=track, scene=scene)
+
+
+@mcp.tool()
+def stop_all_clips() -> dict:
+    """Stop every playing session clip."""
+    return _call("stop_all_clips")
+
+
+@mcp.tool()
 def delete_track(track: Key) -> dict:
     """Delete a track."""
     return _call("delete_track", track=track)

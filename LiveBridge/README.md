@@ -25,6 +25,7 @@ pytest / MCP server / CLI  ──TCP 127.0.0.1:9872──▶  NoteCapBridge Remo
 | `tests/test_sidechain_live.py` | The same chords heard through NoteCap's **sidechain**: NoteCap on a silent audio track, its sidechain fed from the synth track (routed in the saved set with `livebridge/als.py`, since the LOM can't). |
 | `livebridge/als.py` | Edits a saved set where the LOM can't reach: routes a plug-in's sidechain in a copy of the `.als`. |
 | `tests/test_record_quantize_live.py` | NoteCap's late chords (Grid 1/4, Nearest) recorded with Live's **Record Quantization** off (they arrive ~125 ms late) and at 1/4 (exactly on the beat). |
+| `tests/test_notes_live.py` | **Single notes mode**: a 16-note melody written into a session clip (`create_midi_clip`) on Drift, heard by NoteCap, recorded: every pitch, once, with latency. Turns off Drift's sub-octave oscillator, which would otherwise be the sound's real fundamental. |
 | `tests/test_state_live.py` | NoteCap's settings survive **duplicating the track** (automatic), and **saving and reopening the set** (two stages around one Cmd-S). |
 | `scripts/restart_live.sh` | Quits Live and reopens it with a set, then waits for the bridge. |
 
@@ -65,6 +66,7 @@ uv run pytest tests/test_detection_live.py     # Chordism -> Drift -> NoteCap ->
 uv run pytest tests/test_sidechain_live.py     # the same, heard through NoteCap's sidechain
 uv run pytest tests/test_record_quantize_live.py   # late chords snapped by Record Quantization
 uv run pytest tests/test_state_live.py         # settings survive duplicate_track
+uv run pytest tests/test_notes_live.py         # Single notes mode on a melody clip
 # Save and reopen (the LOM can't save a set): prepare, Cmd-S, reopen, verify
 NOTECAP_STATE=prepare uv run pytest tests/test_state_live.py -k reopen
 scripts/restart_live.sh "path/to/the set.als"
@@ -175,6 +177,9 @@ index or a name. Names match exactly (ignoring case) first, then by a unique sub
 | `stop_recording` | `mode`, `stop_transport=true` | the record and transport state |
 | `clear_arrangement_clips` | `track` | `{deleted}` |
 | `clear_session_clips` | `track` | `{deleted}` |
+| `create_midi_clip` | `track`, `notes: [{pitch, start, duration, velocity?}]` (beats), `length=4`, `scene=0`, `name?` | writes a MIDI clip into a session slot, replacing it |
+| `fire_clip` | `track`, `scene=0` | launches it (with the transport, if stopped) |
+| `stop_all_clips` | | stops every session clip |
 | `get_clip_notes` | `track`, `source="auto"` (`arrangement`/`session`), `clip_index?`, `scene?` | clip info (start_time, markers, loop, length) and `notes[]` (pitch, start_time, duration, velocity, mute, probability, and `song_time` for arrangement clips) |
 | `get_meters` | `tracks?` (default all) | `[{track, name, left, right, level}]`, master last |
 | `get_presets` | `track`, `device` | `{device, presets[], selected}`: Live's preset list for a plug-in (for a JUCE VST3, only "Default") |
