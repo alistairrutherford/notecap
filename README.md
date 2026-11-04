@@ -76,7 +76,7 @@ has already passed, the chord is sent at once and arrives late. Live's
 **Record Quantization** snaps it back when it's less than half a grid step late.
 Coarse grids (1/4, 1/2, bar) usually catch the line; at 1/16 most chords are late.
 
-## Phase 0 checks (Live 12)
+## Tested in Live 12
 
 All automated with [LiveBridge](LiveBridge/README.md) and **passing in Live 12.4.6** (44.1 kHz,
 buffer 1024, 2026-10-21):
@@ -92,7 +92,7 @@ buffer 1024, 2026-10-21):
 | Single notes (a melody clip → Drift → NoteCap) | **16/16** notes, 0 extra, latency median 68 ms (Live 12.4.16) |
 
 The only manual step is one save (Live's scripting API can't save a set). See
-[LiveBridge/README.md](LiveBridge/README.md#the-whole-phase-0-run).
+[LiveBridge/README.md](LiveBridge/README.md) for how to run them.
 
 ## Building
 
