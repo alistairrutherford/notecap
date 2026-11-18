@@ -3,6 +3,7 @@
 // host buffer (what Live records through "MIDI From: track / NoteCap").
 // Run via run_integration.sh.
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include "Synth.h"
 #include "TestUtil.h"
 #include <algorithm>
@@ -588,6 +589,53 @@ static void testSingleNotes()
     }
 }
 
+
+static void testInfoView()
+{
+    std::cout << "== info view ==\n";
+    NoteCapAudioProcessor proc;
+    std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+    auto* editor = dynamic_cast<NoteCapAudioProcessorEditor*> (ed.get());
+    check (editor != nullptr, "the editor is NoteCap's");
+    if (editor == nullptr) return;
+
+    // Every parameter has a short description.
+    std::string missing, long_;
+    for (auto* p : proc.getParameters())
+        if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
+        {
+            const auto id = wid->paramID;
+            const auto text = NoteCapAudioProcessorEditor::infoText (id);
+            if (NoteCapAudioProcessorEditor::infoTitle (id).isEmpty() || text.isEmpty()) missing += id.toStdString() + " ";
+            if (text.length() > 200) long_ += id.toStdString() + " ";
+        }
+    check (missing.empty(), "every parameter has an Info View description" + (missing.empty() ? std::string() : " (missing: " + missing + ")"));
+    check (long_.empty(), "descriptions stay brief, at most 200 characters" + (long_.empty() ? std::string() : " (too long: " + long_ + ")"));
+
+    // Every control, display and group can be pointed at.
+    std::set<std::string> found;
+    const auto b = editor->getLocalBounds();
+    for (int y = 0; y < b.getHeight(); y += 4)
+        for (int x = 0; x < b.getWidth(); x += 4)
+            if (const auto key = editor->infoKeyAt ({ x, y }); key.isNotEmpty()) found.insert (key.toStdString());
+    std::string unreachable;
+    for (auto* p : proc.getParameters())
+        if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
+            if (! found.count (wid->paramID.toStdString())) unreachable += wid->paramID.toStdString() + " ";
+    for (const char* k : { "display.detected", "display.pitch", "display.status", "group.detect", "group.quantize", "group.output" })
+        if (! found.count (k)) unreachable += std::string (k) + " ";
+    check (unreachable.empty(), "every control and display has a hover area (" + std::to_string (found.size()) + " areas)"
+                                    + (unreachable.empty() ? std::string() : "; none for: " + unreachable));
+
+    // The strip itself sits below everything and shows the item under the mouse.
+    const auto bottom = juce::Point<int> (b.getCentreX(), b.getBottom() - 30);
+    check (editor->infoKeyAt (bottom).isEmpty(), "the Info View strip isn't itself a hover area");
+    editor->showInfoFor ("grid");
+    check (editor->shownInfoTitle() == "Grid", "pointing at Grid shows its description");
+    editor->showInfoFor ({});
+    check (editor->shownInfoTitle().isEmpty(), "pointing at nothing shows the hint");
+}
+
 int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -602,5 +650,6 @@ int main()
     testRecoversFromNaN();
     testConcurrentInstances();
     testSingleNotes();
+    testInfoView();
     return testutil::finish ("test_plugin");
 }

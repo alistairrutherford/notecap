@@ -3,6 +3,7 @@
 //   Tests/run_integration.sh builds the library; then:
 //   Tests/build/snapshot_editor out.png          (Chords mode, after G then Am)
 //   Tests/build/snapshot_editor out.png notes    (Single notes mode, after a short picked line)
+//   ... hover=<key>                              (the Info View as if pointing at <key>, e.g. hover=grid)
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Synth.h"
@@ -22,7 +23,14 @@ int main (int argc, char** argv)
     const double fs = 48000.0;
     NoteCapAudioProcessor proc;
     proc.setRateAndBufferSizeDetails (fs, 256);
-    const bool notes = argc > 2 && juce::String (argv[2]) == "notes";
+    bool notes = false;
+    juce::String hover;
+    for (int i = 2; i < argc; ++i)
+    {
+        const juce::String a (argv[i]);
+        if (a == "notes") notes = true;
+        else if (a.startsWith ("hover=")) hover = a.fromFirstOccurrenceOf ("=", false, false);
+    }
     if (notes)
         if (auto* mode = proc.apvts.getParameter ("mode")) mode->setValueNotifyingHost (1.0f);
     PlayHead ph;
@@ -47,6 +55,8 @@ int main (int argc, char** argv)
     }
 
     std::unique_ptr<juce::AudioProcessorEditor> editor (proc.createEditor());
+    if (auto* ed = dynamic_cast<NoteCapAudioProcessorEditor*> (editor.get()); ed != nullptr && hover.isNotEmpty())
+        ed->showInfoFor (hover);
     const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
     juce::File out (argc > 1 ? juce::String (argv[1]) : juce::String ("editor.png"));
     out.deleteFile();

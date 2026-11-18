@@ -48,6 +48,17 @@ namespace notecap::ui
         NoteCapAudioProcessor& proc;
     };
 
+    // Ableton-style Info View: a strip along the bottom describing whatever the mouse is over.
+    class InfoView : public juce::Component
+    {
+    public:
+        void show (const juce::String& title, const juce::String& text);
+        void paint (juce::Graphics&) override;
+        const juce::String& getTitle() const noexcept { return title; }
+    private:
+        juce::String title, text;
+    };
+
     // Port / transport / latency / level status panel.
     class StatusDisplay : public juce::Component
     {
@@ -69,11 +80,26 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    void mouseEnter (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+
+    // Info View: the key ("grid", "display.status", ...) of the area at `p` (editor
+    // coordinates), its title, and showing one directly (used by the snapshot tool).
+    juce::String infoKeyAt (juce::Point<int> p) const;
+    static juce::String infoTitle (const juce::String& key);
+    static juce::String infoText (const juce::String& key);
+    void showInfoFor (const juce::String& key);
+    const juce::String& shownInfoTitle() const noexcept { return infoView.getTitle(); }
+
 private:
     void timerCallback() override;
+    void updateInfo (const juce::MouseEvent&);
 
     struct Control
     {
+        juce::String paramId;
         juce::String label;
         std::unique_ptr<juce::Component> component;
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sliderAttachment;
@@ -97,7 +123,12 @@ private:
     notecap::ui::ChordDisplay chordDisplay;
     notecap::ui::ChromaDisplay chromaDisplay;
     notecap::ui::StatusDisplay statusDisplay;
+    notecap::ui::InfoView infoView;
     std::array<Group, 3> groups;
+
+    struct InfoRegion { juce::Rectangle<int> area; juce::String key; };
+    std::vector<InfoRegion> infoRegions;   // most specific first; rebuilt in resized()
+    juce::String hoveredKey;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoteCapAudioProcessorEditor)
 };

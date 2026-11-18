@@ -5,7 +5,7 @@ recognises the chord being played, and sends it as **quantized MIDI** that a
 MIDI track can record. Built with JUCE. Also builds as a Standalone app for
 testing.
 
-![NoteCap plugin window: detected chord, pitch-class bars, status panel and the Detect / Quantize / Output controls](screenshot.png)
+![NoteCap plugin window: detected chord, pitch-class bars, status panel, the Detect / Quantize / Output controls, and the Info View along the bottom](screenshot.png)
 
 See [PLAN.md](PLAN.md) for the full project plan and design decisions.
 
@@ -42,6 +42,9 @@ listens to. Pick the audio track in NoteCap's **Sidechain** section of the
 device header.
 
 ## Controls
+
+Point at any control or display and the **Info View** strip along the bottom says what it does
+and what its settings mean, like Live's own Info View.
 
 | Group | Control | What it does |
 |---|---|---|

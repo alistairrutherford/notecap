@@ -229,6 +229,138 @@ void StatusDisplay::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+namespace
+{
+    struct Info { const char* key; const char* title; const char* text; };
+
+    // One entry per control and display. Keep each to a line or two: what it does, and what
+    // each of its settings means.
+    const Info infoTable[] = {
+        { "display.detected", "Detected",
+          "The chord (in Single notes mode, the note) NoteCap hears now, the one before it, and how sure it is." },
+        { "display.pitch", "Pitch classes",
+          "How strongly each of the 12 notes sounds. Blue: in the detected chord or note. Orange outline: the bass note." },
+        { "display.status", "Status",
+          "Transport and tempo; input level with the Gate marked; detection delay; tuning offset; the last chord or note sent (late = after its grid line)." },
+        { "group.detect", "Detect", "What NoteCap listens to and which chords it may report." },
+        { "group.quantize", "Quantize", "How detected chords and notes are placed on the song's grid." },
+        { "group.output", "Output", "The MIDI NoteCap sends. Record it on a MIDI track with MIDI From set to this track, then NoteCap." },
+
+        { "mode", "Mode",
+          "Chords: detects chords and sends them as voicings. Single notes: follows one note at a time and sends it at the pitch played." },
+        { "source", "Source",
+          "Main input: the audio on this track. Sidechain: audio from the track picked in the device's Sidechain section." },
+        { "gate", "Gate",
+          "Input below this level counts as silence and ends the chord or note. Raise it if noise triggers detections." },
+        { "sensitivity", "Sensitivity",
+          "How sure NoteCap must be before sending a chord. Higher: reacts more readily, more mistakes. Lower: only clear chords." },
+        { "minChord", "Min change",
+          "How long a new chord must last, without a new strum, before NoteCap follows it (legato changes). Chords mode." },
+        { "sevenths", "7th chords", "On: may report 7, maj7 and m7 chords. Off: triads only. Chords mode." },
+        { "suspended", "Sus chords", "On: may report sus2 and sus4 chords. Chords mode." },
+        { "dimAug", "Dim / aug chords", "On: may report diminished, augmented and m7b5 chords. Chords mode." },
+        { "retrigger", "Retrigger on re-strum",
+          "On: strumming the same chord again sends it again. Off: it keeps sounding. Chords mode; single notes always retrigger." },
+
+        { "grid", "Grid",
+          "The grid chords and notes snap to. Off: sent as soon as detected. 1 Bar to 1/16; T = triplets." },
+        { "qmode", "Quantize Mode",
+          "Nearest: the grid line closest to where you played (if it has passed, sent at once). Next line: the next line after detection; always on the grid, maybe a step late." },
+        { "swing", "Swing", "Delays every other grid line. 0%: straight. 33%: triplet feel. 100%: dotted." },
+        { "length", "Length",
+          "Hold: lasts until the next chord or note, or until you stop playing. 1 to 8 steps: a fixed length in grid steps." },
+
+        { "voicing", "Voicing",
+          "How a chord is played. Close: root position. Open: spread over two octaves. Bass + chord: adds the bass note an octave below. Chords mode." },
+        { "octave", "Octave", "Octave of the chord's root; 3 = middle C (C3). Chords mode; single notes keep the pitch played." },
+        { "velMode", "Velocity", "From input: how hard you play sets the velocity. Fixed: always the Fixed vel. value." },
+        { "velocity", "Fixed vel.", "Velocity (1 to 127) sent when Velocity is Fixed, and by Test chords." },
+        { "channel", "Channel", "MIDI channel (1 to 16) NoteCap sends on." },
+        { "testMode", "Test chords",
+          "Ignores the audio and plays C, F, G, Am on every grid line while the transport runs. For checking routing and timing." },
+    };
+
+    const Info* findInfo (const juce::String& key)
+    {
+        for (const auto& i : infoTable)
+            if (key == i.key) return &i;
+        return nullptr;
+    }
+
+    const char* defaultInfoText = "Point at a control or display to see what it does.";
+}
+
+void InfoView::show (const juce::String& newTitle, const juce::String& newText)
+{
+    if (newTitle == title && newText == text) return;
+    title = newTitle;
+    text = newText;
+    repaint();
+}
+
+void InfoView::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawPanel (g, r);
+    r = r.reduced (14.0f, 8.0f);
+    if (title.isNotEmpty())
+    {
+        g.setColour (colours::text);
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.drawText (title, r.removeFromTop (18.0f), juce::Justification::centredLeft);
+    }
+    g.setColour (title.isEmpty() ? colours::dim : colours::text.withAlpha (0.85f));
+    g.setFont (juce::FontOptions (12.5f));
+    g.drawFittedText (text, r.toNearestInt(), juce::Justification::topLeft, 2, 1.0f);
+}
+
+juce::String NoteCapAudioProcessorEditor::infoTitle (const juce::String& key)
+{
+    const auto* i = findInfo (key);
+    return i != nullptr ? juce::String (i->title) : juce::String();
+}
+
+juce::String NoteCapAudioProcessorEditor::infoText (const juce::String& key)
+{
+    const auto* i = findInfo (key);
+    return i != nullptr ? juce::String (i->text) : juce::String();
+}
+
+juce::String NoteCapAudioProcessorEditor::infoKeyAt (juce::Point<int> p) const
+{
+    for (const auto& r : infoRegions)
+        if (r.area.contains (p)) return r.key;
+    return {};
+}
+
+void NoteCapAudioProcessorEditor::showInfoFor (const juce::String& key)
+{
+    hoveredKey = key;
+    if (const auto* i = findInfo (key))
+        infoView.show (i->title, i->text);
+    else
+        infoView.show ({}, defaultInfoText);
+}
+
+void NoteCapAudioProcessorEditor::updateInfo (const juce::MouseEvent& e)
+{
+    const auto key = infoKeyAt (e.getEventRelativeTo (this).getPosition());
+    if (key != hoveredKey)
+        showInfoFor (key);
+}
+
+void NoteCapAudioProcessorEditor::mouseEnter (const juce::MouseEvent& e) { updateInfo (e); }
+void NoteCapAudioProcessorEditor::mouseMove (const juce::MouseEvent& e)  { updateInfo (e); }
+void NoteCapAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)  { updateInfo (e); }
+
+void NoteCapAudioProcessorEditor::mouseExit (const juce::MouseEvent& e)
+{
+    // Moving between child components also sends exits; clear only when leaving the editor.
+    if (! getLocalBounds().contains (e.getEventRelativeTo (this).getPosition()))
+        showInfoFor ({});
+}
+
+//==============================================================================
 NoteCapAudioProcessorEditor::NoteCapAudioProcessorEditor (NoteCapAudioProcessor& p)
     : AudioProcessorEditor (&p), proc (p), chordDisplay (p), chromaDisplay (p), statusDisplay (p)
 {
@@ -236,7 +368,10 @@ NoteCapAudioProcessorEditor::NoteCapAudioProcessorEditor (NoteCapAudioProcessor&
     addAndMakeVisible (chordDisplay);
     addAndMakeVisible (chromaDisplay);
     addAndMakeVisible (statusDisplay);
+    addAndMakeVisible (infoView);
+    infoView.show ({}, defaultInfoText);
 
+    infoRegions.reserve (40);
     auto& detect = groups[0];
     detect.title = "DETECT";
     addCombo (detect, "mode", "Mode");
@@ -265,7 +400,8 @@ NoteCapAudioProcessorEditor::NoteCapAudioProcessorEditor (NoteCapAudioProcessor&
     addSlider (output, "channel", "Channel");
     addToggle (output, "testMode", "Test chords (C F G Am)");
 
-    setSize (880, 560);
+    setSize (880, 624);
+    addMouseListener (this, true);   // hover over any child updates the Info View
     startTimerHz (30);
 }
 
@@ -277,6 +413,7 @@ NoteCapAudioProcessorEditor::~NoteCapAudioProcessorEditor()
 void NoteCapAudioProcessorEditor::addSlider (Group& grp, const juce::String& id, const juce::String& label)
 {
     auto c = std::make_unique<Control>();
+    c->paramId = id;
     c->label = label;
     auto s = std::make_unique<juce::Slider> (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
     s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 54, 20);
@@ -289,6 +426,7 @@ void NoteCapAudioProcessorEditor::addSlider (Group& grp, const juce::String& id,
 void NoteCapAudioProcessorEditor::addCombo (Group& grp, const juce::String& id, const juce::String& label)
 {
     auto c = std::make_unique<Control>();
+    c->paramId = id;
     c->label = label;
     auto box = std::make_unique<juce::ComboBox>();
     if (auto* param = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (id)))
@@ -302,6 +440,7 @@ void NoteCapAudioProcessorEditor::addCombo (Group& grp, const juce::String& id, 
 void NoteCapAudioProcessorEditor::addToggle (Group& grp, const juce::String& id, const juce::String& label)
 {
     auto c = std::make_unique<Control>();
+    c->paramId = id;
     auto b = std::make_unique<juce::ToggleButton> (label);
     c->buttonAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, id, *b);
     addAndMakeVisible (*b);
@@ -343,7 +482,10 @@ void NoteCapAudioProcessorEditor::paint (juce::Graphics& g)
 
 void NoteCapAudioProcessorEditor::resized()
 {
+    infoRegions.clear();
     auto area = getLocalBounds().reduced (12);
+    infoView.setBounds (area.removeFromBottom (54));
+    area.removeFromBottom (10);
     auto top = area.removeFromTop (190);
     chordDisplay.setBounds (top.removeFromLeft (260));
     top.removeFromLeft (10);
@@ -363,10 +505,20 @@ void NoteCapAudioProcessorEditor::resized()
         inner.removeFromTop (22);
         for (auto& c : grp.controls)
         {
-            auto row = inner.removeFromTop (30).reduced (0, 3);
+            auto row = inner.removeFromTop (30);
+            infoRegions.push_back ({ row, c->paramId });   // the whole row, label included
+            row = row.reduced (0, 3);
             c->component->setBounds (c->label.isNotEmpty() ? row.withTrimmedLeft (88) : row);
         }
     }
+
+    // Less specific areas after the rows, so a row wins over its group.
+    infoRegions.push_back ({ chordDisplay.getBounds(), "display.detected" });
+    infoRegions.push_back ({ chromaDisplay.getBounds(), "display.pitch" });
+    infoRegions.push_back ({ statusDisplay.getBounds(), "display.status" });
+    const char* groupKeys[] = { "group.detect", "group.quantize", "group.output" };
+    for (size_t i = 0; i < groups.size(); ++i)
+        infoRegions.push_back ({ groups[i].bounds, groupKeys[i] });
 }
 
 void NoteCapAudioProcessorEditor::timerCallback()
