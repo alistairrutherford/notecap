@@ -645,6 +645,8 @@ static void testInfoView()
     check (notMarked.empty(), "chord-only controls say 'Chords mode' in the Info View"
                                   + (notMarked.empty() ? std::string() : " (missing: " + notMarked + ")"));
     check (! editor->isDimmed ("sevenths"), "Chords mode: nothing dimmed");
+    check (editor->quantizeTip().contains ("each chord") && ! editor->quantizeTip().contains ("note "),
+           "Chords mode: Quantize note talks about chords");
     setParam (proc, "mode", 1);
     editor->refreshForMode();
     std::string wrong;
@@ -654,6 +656,9 @@ static void testInfoView()
                 wrong += wid->paramID.toStdString() + " ";
     check (wrong.empty(), "Single notes mode: exactly the chord-only controls dimmed"
                               + (wrong.empty() ? std::string() : " (wrong: " + wrong + ")"));
+    check (editor->quantizeTip().contains ("each note") && editor->quantizeTip().contains ("late notes")
+               && ! editor->quantizeTip().contains ("chord"),
+           "Single notes mode: Quantize note talks about notes");
     std::set<std::string> hoverable;
     for (int y = 0; y < b.getHeight(); y += 4)
         for (int x = 0; x < b.getWidth(); x += 4)

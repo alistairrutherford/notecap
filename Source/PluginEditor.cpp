@@ -477,11 +477,16 @@ void NoteCapAudioProcessorEditor::paint (juce::Graphics& g)
     tip.setTop (q.controls.back()->component->getBottom() + 16);
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (12.0f));
-    g.drawFittedText ("Nearest snaps each chord to the grid line closest to where it was played. "
-                      "If that line has already passed, the chord is sent at once.\n\n"
-                      "To record: on another MIDI track set MIDI From to this track, then NoteCap, and arm it. "
-                      "Set Live's Record Quantization to the same grid to snap late chords.",
-                      tip, juce::Justification::topLeft, 12);
+    g.drawFittedText (quantizeTip(), tip, juce::Justification::topLeft, 12);
+}
+
+juce::String NoteCapAudioProcessorEditor::quantizeTip() const
+{
+    const juce::String what = dimmedForNotes ? "note" : "chord";
+    return "Nearest snaps each " + what + " to the grid line closest to where it was played. "
+           "If that line has already passed, the " + what + " is sent at once.\n\n"
+           "To record: on another MIDI track set MIDI From to this track, then NoteCap, and arm it. "
+           "Set Live's Record Quantization to the same grid to snap late " + what + "s.";
 }
 
 void NoteCapAudioProcessorEditor::resized()

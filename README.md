@@ -5,7 +5,7 @@ recognises the chord being played, and sends it as **quantized MIDI** that a
 MIDI track can record. Built with JUCE. Also builds as a Standalone app for
 testing.
 
-![NoteCap plugin window: detected chord, pitch-class bars, status panel, the Detect / Quantize / Output controls, and the Info View along the bottom](screenshot.png)
+![NoteCap plugin window in Single notes mode: detected note, pitch-class bars, status panel, the Detect / Quantize / Output controls with the chord-only ones dimmed, and the Info View along the bottom](screenshot.png)
 
 See [PLAN.md](PLAN.md) for the full project plan and design decisions.
 

@@ -97,6 +97,7 @@ public:
     static bool isChordOnly (const juce::String& paramId);
     bool isDimmed (const juce::String& paramId) const;
     void refreshForMode();
+    juce::String quantizeTip() const;   // the note under the Quantize controls ("chord" / "note")
 
 private:
     void timerCallback() override;
