@@ -93,6 +93,11 @@ public:
     void showInfoFor (const juce::String& key);
     const juce::String& shownInfoTitle() const noexcept { return infoView.getTitle(); }
 
+    // Chord-only controls are dimmed in Single notes mode (checked on the UI timer).
+    static bool isChordOnly (const juce::String& paramId);
+    bool isDimmed (const juce::String& paramId) const;
+    void refreshForMode();
+
 private:
     void timerCallback() override;
     void updateInfo (const juce::MouseEvent&);
@@ -129,6 +134,7 @@ private:
     struct InfoRegion { juce::Rectangle<int> area; juce::String key; };
     std::vector<InfoRegion> infoRegions;   // most specific first; rebuilt in resized()
     juce::String hoveredKey;
+    bool dimmedForNotes = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoteCapAudioProcessorEditor)
 };

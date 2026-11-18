@@ -634,6 +634,40 @@ static void testInfoView()
     check (editor->shownInfoTitle() == "Grid", "pointing at Grid shows its description");
     editor->showInfoFor ({});
     check (editor->shownInfoTitle().isEmpty(), "pointing at nothing shows the hint");
+
+    // Chord-only controls dim in Single notes mode, and say "Chords mode" in the Info View.
+    std::string notMarked;
+    for (auto* p : proc.getParameters())
+        if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
+            if (NoteCapAudioProcessorEditor::isChordOnly (wid->paramID)
+                && ! NoteCapAudioProcessorEditor::infoText (wid->paramID).contains ("Chords mode"))
+                notMarked += wid->paramID.toStdString() + " ";
+    check (notMarked.empty(), "chord-only controls say 'Chords mode' in the Info View"
+                                  + (notMarked.empty() ? std::string() : " (missing: " + notMarked + ")"));
+    check (! editor->isDimmed ("sevenths"), "Chords mode: nothing dimmed");
+    setParam (proc, "mode", 1);
+    editor->refreshForMode();
+    std::string wrong;
+    for (auto* p : proc.getParameters())
+        if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
+            if (editor->isDimmed (wid->paramID) != NoteCapAudioProcessorEditor::isChordOnly (wid->paramID))
+                wrong += wid->paramID.toStdString() + " ";
+    check (wrong.empty(), "Single notes mode: exactly the chord-only controls dimmed"
+                              + (wrong.empty() ? std::string() : " (wrong: " + wrong + ")"));
+    std::set<std::string> hoverable;
+    for (int y = 0; y < b.getHeight(); y += 4)
+        for (int x = 0; x < b.getWidth(); x += 4)
+            if (const auto key = editor->infoKeyAt ({ x, y }); key.isNotEmpty()) hoverable.insert (key.toStdString());
+    std::string lost;
+    for (auto* p : proc.getParameters())
+        if (auto* wid = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
+            if (editor->isDimmed (wid->paramID) && ! hoverable.count (wid->paramID.toStdString()))
+                lost += wid->paramID.toStdString() + " ";
+    check (lost.empty(), "dimmed controls can still be pointed at for their Info View text"
+                             + (lost.empty() ? std::string() : " (not: " + lost + ")"));
+    setParam (proc, "mode", 0);
+    editor->refreshForMode();
+    check (! editor->isDimmed ("voicing"), "back to Chords mode: undimmed");
 }
 
 int main()

@@ -253,7 +253,7 @@ namespace
         { "gate", "Gate",
           "Input below this level counts as silence and ends the chord or note. Raise it if noise triggers detections." },
         { "sensitivity", "Sensitivity",
-          "How sure NoteCap must be before sending a chord. Higher: reacts more readily, more mistakes. Lower: only clear chords." },
+          "How sure NoteCap must be before sending a chord. Higher: reacts more readily, more mistakes. Lower: only clear chords. Chords mode." },
         { "minChord", "Min change",
           "How long a new chord must last, without a new strum, before NoteCap follows it (legato changes). Chords mode." },
         { "sevenths", "7th chords", "On: may report 7, maj7 and m7 chords. Off: triads only. Chords mode." },
@@ -401,6 +401,8 @@ NoteCapAudioProcessorEditor::NoteCapAudioProcessorEditor (NoteCapAudioProcessor&
     addToggle (output, "testMode", "Test chords (C F G Am)");
 
     setSize (880, 624);
+    dimmedForNotes = false;
+    refreshForMode();
     addMouseListener (this, true);   // hover over any child updates the Info View
     startTimerHz (30);
 }
@@ -460,11 +462,13 @@ void NoteCapAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawText (grp.title, grp.bounds.reduced (14, 10).removeFromTop (14), juce::Justification::centredLeft);
 
         g.setFont (juce::FontOptions (13.0f));
-        g.setColour (colours::text);
         for (const auto& c : grp.controls)
             if (c->label.isNotEmpty())
+            {
+                g.setColour (isDimmed (c->paramId) ? colours::dim.withAlpha (0.6f) : colours::text);
                 g.drawText (c->label, c->component->getBounds().withX (grp.bounds.getX() + 14).withWidth (84),
                             juce::Justification::centredLeft);
+            }
     }
 
     // Recording tip under the quantize controls.
@@ -521,8 +525,36 @@ void NoteCapAudioProcessorEditor::resized()
         infoRegions.push_back ({ groups[i].bounds, groupKeys[i] });
 }
 
+bool NoteCapAudioProcessorEditor::isChordOnly (const juce::String& paramId)
+{
+    // Settings the single-notes tracker doesn't use.
+    static const juce::StringArray ids { "sensitivity", "minChord", "sevenths", "suspended", "dimAug",
+                                         "retrigger", "voicing", "octave" };
+    return ids.contains (paramId);
+}
+
+bool NoteCapAudioProcessorEditor::isDimmed (const juce::String& paramId) const
+{
+    return dimmedForNotes && isChordOnly (paramId);
+}
+
+void NoteCapAudioProcessorEditor::refreshForMode()
+{
+    const bool notes = proc.apvts.getRawParameterValue ("mode")->load() > 0.5f;
+    if (notes == dimmedForNotes)
+        return;
+    dimmedForNotes = notes;
+    // Dimmed, not disabled: they stay adjustable (for when you switch back) and keep their Info View text.
+    for (auto& grp : groups)
+        for (auto& c : grp.controls)
+            if (isChordOnly (c->paramId))
+                c->component->setAlpha (notes ? 0.35f : 1.0f);
+    repaint();
+}
+
 void NoteCapAudioProcessorEditor::timerCallback()
 {
+    refreshForMode();
     chordDisplay.repaint();
     chromaDisplay.repaint();
     statusDisplay.repaint();
